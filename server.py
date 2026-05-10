@@ -383,6 +383,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    import threading
+    threading.Thread(target=load_report, daemon=True).start()
     port = int(os.environ.get("PORT", "8000"))
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"Serving Choice ENT report on port {port}")
