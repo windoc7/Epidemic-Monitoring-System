@@ -50,6 +50,7 @@ class ReportSummary:
     week: str
     influenza: str
     influenza_direction: str
+    influenza_trend: list[tuple[str, float]]
     ari_cases: str
     ari_delta: str
     key_viruses: list[tuple[str, str]]
@@ -239,6 +240,15 @@ def search_value(patterns: list[str], text: str, default: str = "-") -> str:
     return default
 
 
+def extract_weekly_trend(text: str, heading: str) -> list[tuple[str, float]]:
+    match = re.search(rf"{re.escape(heading)}:\s*(.*?)(?:\s+-|\s+병원체 감시|$)", text)
+    if not match:
+        return []
+    window = match.group(1)
+    values = re.findall(r"\((\d+주)\)\s*(\d+(?:\.\d+)?)\s*명", window)
+    return [(week, float(value)) for week, value in values[-5:]]
+
+
 def extract_report_summary(report: Report, text: str) -> ReportSummary:
     week = search_value([r"(\d+)\s*주차", r"(\d+)\s*주"], report.title, "-")
 
@@ -302,6 +312,7 @@ def extract_report_summary(report: Report, text: str) -> ReportSummary:
         week=week,
         influenza=f"{influenza}‰" if influenza != "-" else "-",
         influenza_direction=influenza_direction,
+        influenza_trend=extract_weekly_trend(text, "의사환자분율 추이"),
         ari_cases=f"{ari_cases_raw}명" if ari_cases_raw != "-" else "-",
         ari_delta=ari_delta,
         key_viruses=key_viruses,
@@ -331,66 +342,87 @@ def render_summary_image(report: Report, summary: ReportSummary, output_path: Pa
     from PIL import Image, ImageDraw
 
     width, height = 1080, 1500
-    image = Image.new("RGB", (width, height), "#f4f1ff")
+    image = Image.new("RGB", (width, height), "#08111f")
     draw = ImageDraw.Draw(image)
 
-    title_font = find_font(54, bold=True)
+    title_font = find_font(58, bold=True)
     subtitle_font = find_font(25)
-    label_font = find_font(26, bold=True)
+    eyebrow_font = find_font(22, bold=True)
+    label_font = find_font(25, bold=True)
     value_font = find_font(58, bold=True)
-    small_font = find_font(23)
-    section_font = find_font(38, bold=True)
-    item_font = find_font(31, bold=True)
+    small_font = find_font(22)
+    section_font = find_font(36, bold=True)
+    item_font = find_font(28, bold=True)
 
     for y in range(height):
         ratio = y / height
-        red = int(94 + 34 * ratio)
-        green = int(100 + 18 * ratio)
-        blue = int(232 - 28 * ratio)
+        red = int(9 + 10 * ratio)
+        green = int(19 + 20 * ratio)
+        blue = int(36 + 38 * ratio)
         draw.line([(0, y), (width, y)], fill=(red, green, blue))
 
-    draw.text((80, 82), "호흡기 감염병 모니터링", font=title_font, fill="#ffffff")
-    draw.text((84, 154), f"{report.published_date} · {summary.week}주차 리포트", font=subtitle_font, fill="#e7e5ff")
+    draw.ellipse((690, -180, 1260, 390), fill="#123f68")
+    draw.ellipse((-240, 820, 300, 1360), fill="#0f766e")
+    draw.rounded_rectangle((64, 56, 1016, 1444), radius=46, fill="#f8fafc")
 
-    cards = [
-        ((70, 245, 500, 465), "현재 주차", f"{summary.week}주차", "#dff7ff", "#0891b2"),
-        ((580, 245, 1010, 465), "인플루엔자", summary.influenza, "#fff1f2", "#e11d48"),
-        ((70, 505, 500, 725), "기타호흡기감염증", summary.ari_cases, "#ecfdf5", "#16a34a"),
-        ((580, 505, 1010, 725), "전주 대비", summary.ari_delta, "#fffbeb", "#d97706"),
-    ]
-    for box, label, value, chip_fill, accent in cards:
-        draw_card(draw, box, radius=34, fill="#ffffff")
-        x1, y1, x2, _ = box
-        draw.rounded_rectangle((x1 + 28, y1 + 30, x1 + 178, y1 + 78), radius=18, fill=chip_fill)
-        draw.text((x1 + 48, y1 + 39), label[:8], font=small_font, fill=accent)
-        draw.text((x1 + 36, y1 + 108), value, font=value_font, fill="#111827")
-        if label == "인플루엔자":
-            draw.text((x1 + 38, y1 + 178), f"전주 대비 {summary.influenza_direction}", font=subtitle_font, fill="#6b7280")
-        else:
-            draw.text((x1 + 38, y1 + 178), label, font=subtitle_font, fill="#6b7280")
+    draw.rounded_rectangle((64, 56, 1016, 260), radius=46, fill="#0f172a")
+    draw.text((104, 94), "KDCA RESPIRATORY REPORT", font=eyebrow_font, fill="#67e8f9")
+    draw.text((104, 132), "호흡기 감염병 모니터링", font=title_font, fill="#ffffff")
+    draw.text((106, 210), f"{report.published_date} · {summary.week}주차 · 자동 요약", font=subtitle_font, fill="#cbd5e1")
 
-    draw_card(draw, (70, 800, 1010, 1235), radius=36, fill="#ffffff")
-    draw.text((110, 850), "주요 바이러스 분포", font=section_font, fill="#111827")
-    colors = ["#2563eb", "#ef4444", "#f59e0b", "#8b5cf6", "#10b981"]
-    max_value = 1
-    parsed: list[tuple[str, int, str]] = []
+    def metric_card(box: tuple[int, int, int, int], label: str, value: str, note: str, accent: str) -> None:
+        x1, y1, x2, y2 = box
+        draw.rounded_rectangle(box, radius=30, fill="#ffffff", outline="#e5e7eb", width=2)
+        draw.rounded_rectangle((x1 + 28, y1 + 28, x1 + 172, y1 + 68), radius=17, fill=accent)
+        draw.text((x1 + 46, y1 + 34), label, font=small_font, fill="#ffffff")
+        draw.text((x1 + 30, y1 + 92), value, font=value_font, fill="#0f172a")
+        draw.text((x1 + 32, y2 - 54), note, font=subtitle_font, fill="#64748b")
+
+    metric_card((104, 310, 482, 520), "WEEK", f"{summary.week}주차", "현재 보고 주차", "#0ea5e9")
+    metric_card((598, 310, 976, 520), "ILI", summary.influenza, f"전주 대비 {summary.influenza_direction}", "#f43f5e")
+    metric_card((104, 552, 482, 762), "ARI", summary.ari_cases, "입원환자 수", "#10b981")
+    metric_card((598, 552, 976, 762), "DELTA", summary.ari_delta, "전주 대비", "#f59e0b")
+
+    draw.rounded_rectangle((104, 810, 976, 1078), radius=32, fill="#0f172a")
+    draw.text((144, 850), "인플루엔자 의사환자분율 추이", font=section_font, fill="#ffffff")
+    chart_left, chart_top, chart_right, chart_bottom = 160, 922, 900, 1018
+    draw.line((chart_left, chart_bottom, chart_right, chart_bottom), fill="#334155", width=2)
+    if summary.influenza_trend:
+        values = [value for _, value in summary.influenza_trend]
+        min_value, max_value = min(values), max(values)
+        span = max(max_value - min_value, 1)
+        points = []
+        step = (chart_right - chart_left) / max(len(values) - 1, 1)
+        for index, (week, value) in enumerate(summary.influenza_trend):
+            x = int(chart_left + index * step)
+            y = int(chart_bottom - ((value - min_value) / span) * 82)
+            points.append((x, y))
+            draw.text((x - 20, chart_bottom + 18), week, font=small_font, fill="#94a3b8")
+        for start, end in zip(points, points[1:]):
+            draw.line((start, end), fill="#38bdf8", width=7)
+        for point in points:
+            draw.ellipse((point[0] - 9, point[1] - 9, point[0] + 9, point[1] + 9), fill="#ffffff", outline="#38bdf8", width=5)
+        draw.text((760, 854), summary.influenza, font=value_font, fill="#67e8f9")
+
+    draw.rounded_rectangle((104, 1118, 976, 1340), radius=32, fill="#ffffff", outline="#e5e7eb", width=2)
+    draw.text((144, 1148), "주요 바이러스 분포", font=section_font, fill="#0f172a")
+    parsed: list[tuple[str, float, str]] = []
     for name, value in summary.key_viruses:
-        number = int(re.sub(r"\D", "", value) or "0")
+        number = float(re.sub(r"[^0-9.]", "", value) or "0")
         parsed.append((name, number, value))
-        max_value = max(max_value, number)
     parsed.sort(key=lambda item: item[1], reverse=True)
-    for index, (name, number, value) in enumerate(parsed):
-        y = 928 + index * 62
-        color = colors[index % len(colors)]
-        draw.text((115, y - 2), name, font=item_font, fill="#111827")
-        bar_left = 330
-        bar_width = int(400 * number / max_value)
-        draw.rounded_rectangle((bar_left, y + 10, bar_left + bar_width, y + 40), radius=15, fill=color)
-        draw.text((820, y - 2), value, font=item_font, fill="#111827")
+    colors = ["#2563eb", "#14b8a6", "#f59e0b", "#8b5cf6", "#ef4444"]
+    max_value = max([item[1] for item in parsed] or [1])
+    for index, (name, number, value) in enumerate(parsed[:4]):
+        x = 144 + index * 205
+        bar_height = int(74 * number / max_value)
+        baseline = 1272
+        draw.rounded_rectangle((x, baseline - bar_height, x + 70, baseline), radius=18, fill=colors[index])
+        draw.text((x + 84, 1202), value, font=small_font, fill="#334155")
+        draw.text((x, 1290), name, font=item_font, fill="#0f172a")
 
-    draw_card(draw, (70, 1280, 1010, 1410), radius=30, fill="#111827")
-    draw.text((110, 1316), "질병관리청 감염병포털 최신 주간소식지 기준", font=subtitle_font, fill="#ffffff")
-    draw.text((110, 1360), "원문은 카카오톡 메시지의 링크에서 확인하세요.", font=small_font, fill="#c7d2fe")
+    draw.rounded_rectangle((104, 1370, 976, 1410), radius=20, fill="#e2e8f0")
+    draw.text((134, 1378), "질병관리청 감염병포털 최신 주간소식지 기반 · 원문 링크는 카카오 메시지에서 확인", font=small_font, fill="#334155")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, "PNG", optimize=True)
