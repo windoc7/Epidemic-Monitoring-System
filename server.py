@@ -21,16 +21,23 @@ from kdca_kakao_report import (
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "latest_report.png"
 
+_cache: dict = {}
+
 
 def verify_ssl() -> bool:
     return os.environ.get("VERIFY_SSL", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def load_report() -> tuple[object, object]:
-    report = find_latest_report(request_text(KDCA_LIST_URL, verify_ssl=verify_ssl()))
-    summary = extract_report_summary(report, article_text(report, verify_ssl=verify_ssl()))
-    render_summary_image(report, summary, IMAGE_PATH)
-    return report, summary
+    ssl = verify_ssl()
+    report = find_latest_report(request_text(KDCA_LIST_URL, verify_ssl=ssl))
+    if _cache.get("doc_no") != report.doc_no:
+        summary = extract_report_summary(report, article_text(report, verify_ssl=ssl))
+        render_summary_image(report, summary, IMAGE_PATH)
+        _cache["doc_no"] = report.doc_no
+        _cache["report"] = report
+        _cache["summary"] = summary
+    return _cache["report"], _cache["summary"]
 
 
 def number_from(value: str) -> float:
