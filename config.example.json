@@ -1,0 +1,9 @@
+{
+  "kakao_rest_api_key": "YOUR_REST_API_KEY",
+  "kakao_refresh_token": "YOUR_REFRESH_TOKEN",
+  "kakao_client_secret": "",
+  "verify_ssl": false,
+  "disable_state": false,
+  "kdca_list_url": "https://dportal.kdca.go.kr/pot/bbs/BD_selectBbsList.do?q_bbsDocNo=&q_bbsSn=1010&q_clsfNo=2&q_currPage=1&q_searchKeyTy=&q_searchVal=%ED%91%9C%EB%B3%B8%EA%B0%90%EC%8B%9C&q_sortName=q_sortOrder%3D",
+  "state_path": "D:\\감영병 모니터링\\state.json"
+}
