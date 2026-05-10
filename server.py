@@ -376,19 +376,40 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes((BASE_DIR / "choice_ent_logo.png").read_bytes(), "image/png")
             return
         if self.path.startswith("/latest_report.png"):
-            load_report()
-            self.send_bytes(IMAGE_PATH.read_bytes(), "image/png")
+            try:
+                load_report()
+                self.send_bytes(IMAGE_PATH.read_bytes(), "image/png")
+            except Exception as exc:
+                print(f"image error: {exc}")
+                self.send_response(503)
+                self.end_headers()
             return
-        self.send_bytes(render_html().encode("utf-8"), "text/html; charset=utf-8")
+        try:
+            self.send_bytes(render_html().encode("utf-8"), "text/html; charset=utf-8")
+        except Exception as exc:
+            print(f"render error: {exc}")
+            self.send_bytes(f"<pre>오류: {exc}</pre>".encode("utf-8"), "text/html; charset=utf-8")
+
+    def log_message(self, fmt: str, *args: object) -> None:
+        print(fmt % args)
 
 
 def main() -> None:
     import threading
-    threading.Thread(target=load_report, daemon=True).start()
     port = int(os.environ.get("PORT", "8000"))
+    print(f"Starting on port {port}")
+    threading.Thread(target=_safe_preload, daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"Serving Choice ENT report on port {port}")
+    print(f"Ready on port {port}")
     server.serve_forever()
+
+
+def _safe_preload() -> None:
+    try:
+        load_report()
+        print("Preload complete")
+    except Exception as exc:
+        print(f"Preload failed (non-fatal): {exc}")
 
 
 if __name__ == "__main__":
