@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import os
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -42,7 +43,6 @@ def load_report() -> tuple[object, object]:
 
 def number_from(value: str) -> float:
     import re
-
     return float(re.sub(r"[^0-9.]", "", value) or "0")
 
 
@@ -394,22 +394,21 @@ class Handler(BaseHTTPRequestHandler):
         print(fmt % args)
 
 
-def main() -> None:
-    import threading
-    port = int(os.environ.get("PORT", "8000"))
-    print(f"Starting on port {port}")
-    threading.Thread(target=_safe_preload, daemon=True).start()
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"Ready on port {port}")
-    server.serve_forever()
-
-
 def _safe_preload() -> None:
     try:
         load_report()
         print("Preload complete")
     except Exception as exc:
         print(f"Preload failed (non-fatal): {exc}")
+
+
+def main() -> None:
+    port = int(os.environ.get("PORT", "8000"))
+    print(f"Starting on port {port}")
+    threading.Thread(target=_safe_preload, daemon=True).start()
+    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    print(f"Ready on port {port}")
+    server.serve_forever()
 
 
 if __name__ == "__main__":
