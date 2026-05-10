@@ -246,10 +246,11 @@ def refresh_kakao_token(config: dict[str, Any], config_path: Path) -> str:
 
 def send_kakao_message(access_token: str, report: Report, *, verify_ssl: bool) -> None:
     message = (
+        "감염병 주간 리포트\n"
         f"{report.title}\n"
         f"등록일: {report.published_date}\n"
-        "질병관리청 감염병포털에 새 주간소식지가 올라왔습니다.\n"
-        f"{report.url}"
+        "질병관리청 감염병포털에 최신 주간소식지가 올라왔습니다.\n"
+        "아래 버튼에서 원문을 확인하세요."
     )
     template_object = {
         "object_type": "text",
