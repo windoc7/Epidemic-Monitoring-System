@@ -366,9 +366,11 @@ def render_summary_image(report: Report, summary: ReportSummary, output_path: Pa
     draw.rounded_rectangle((64, 56, 1016, 1444), radius=46, fill="#f8fafc")
 
     draw.rounded_rectangle((64, 56, 1016, 260), radius=46, fill="#0f172a")
-    draw.text((104, 94), "KDCA RESPIRATORY REPORT", font=eyebrow_font, fill="#67e8f9")
-    draw.text((104, 132), "호흡기 감염병 모니터링", font=title_font, fill="#ffffff")
-    draw.text((106, 210), f"{report.published_date} · {summary.week}주차 · 자동 요약", font=subtitle_font, fill="#cbd5e1")
+    draw.text((104, 88), "CHOICE ENT CLINIC", font=eyebrow_font, fill="#67e8f9")
+    draw.text((104, 124), "초이스 이비인후과", font=title_font, fill="#ffffff")
+    draw.rounded_rectangle((742, 96, 930, 150), radius=22, fill="#ecfeff")
+    draw.text((770, 109), "KDCA DATA", font=eyebrow_font, fill="#0891b2")
+    draw.text((106, 204), f"호흡기 감염병 모니터링 · {report.published_date} · {summary.week}주차", font=subtitle_font, fill="#cbd5e1")
 
     def metric_card(box: tuple[int, int, int, int], label: str, value: str, note: str, accent: str) -> None:
         x1, y1, x2, y2 = box
