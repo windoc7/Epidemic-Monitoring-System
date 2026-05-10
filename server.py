@@ -45,7 +45,6 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    ensure_report_image()
     os.chdir(BASE_DIR)
     port = int(os.environ.get("PORT", "8000"))
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
