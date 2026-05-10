@@ -86,6 +86,31 @@ def save_json(path: Path, data: dict[str, Any]) -> None:
         file.write("\n")
 
 
+def hangul_count(value: str) -> int:
+    return sum("\uac00" <= char <= "\ud7a3" for char in value)
+
+
+def repair_mojibake(value: str) -> str:
+    """Repair UTF-8 Korean text that was accidentally decoded as CP949."""
+    try:
+        repaired = value.encode("cp949").decode("utf-8")
+    except UnicodeError:
+        return value
+    return repaired if hangul_count(repaired) > hangul_count(value) else value
+
+
+def decode_response(response: Any) -> str:
+    body = response.read()
+    charset = response.headers.get_content_charset()
+    candidates = [charset, "utf-8", "cp949", "euc-kr"]
+    for candidate in dict.fromkeys(filter(None, candidates)):
+        try:
+            return repair_mojibake(body.decode(candidate))
+        except UnicodeError:
+            continue
+    return body.decode("utf-8", errors="replace")
+
+
 def request_text(
     url: str,
     *,
@@ -108,8 +133,7 @@ def request_text(
     request = urllib.request.Request(url, data=encoded_data, headers=headers)
     context = None if verify_ssl else ssl._create_unverified_context()
     with urllib.request.urlopen(request, timeout=30, context=context) as response:
-        charset = response.headers.get_content_charset() or "utf-8"
-        return response.read().decode(charset, errors="replace")
+        return decode_response(response)
 
 
 def strip_tags(value: str) -> str:
@@ -131,13 +155,25 @@ def report_url(doc_no: str) -> str:
     return f"https://dportal.kdca.go.kr/pot/bbs/BD_selectBbs.do?{query}"
 
 
+def parse_title(text: str) -> str | None:
+    match = re.search(r"(20\d{2}\s*년?\s*감염병\s*표본감시\s*주간소식지\s*\d+\s*주차)", text)
+    if match:
+        return re.sub(r"\s+", " ", match.group(1)).strip()
+    return None
+
+
+def fallback_title(published_date: str) -> str:
+    return f"감염병 표본감시 주간소식지 ({published_date})"
+
+
 def find_latest_report(list_html: str) -> Report:
+    list_html = repair_mojibake(list_html)
     rows = re.findall(r"<tr\b[^>]*>(.*?)</tr>", list_html, flags=re.IGNORECASE | re.DOTALL)
     fallback_doc_numbers = re.findall(r"q_bbsDocNo=(\d+)", list_html)
 
     for row in rows:
-        text = strip_tags(row)
-        if "감염병 표본감시 주간소식지" not in text:
+        text = repair_mojibake(strip_tags(row))
+        if "감염병" not in text or "표본감시" not in text:
             continue
 
         doc_match = re.search(r"q_bbsDocNo=(\d+)", row)
@@ -146,30 +182,29 @@ def find_latest_report(list_html: str) -> Report:
         if not doc_match:
             continue
 
-        title_match = re.search(r"(20\d{2}년\s+감염병\s+표본감시\s+주간소식지\s+\d+주차)", text)
         date_match = re.search(r"(20\d{2}\.\d{2}\.\d{2})", text)
-        department = "감염병관리과" if "감염병관리과" in text else ""
-
-        if title_match and date_match:
+        if date_match:
+            published_date = date_match.group(1)
+            title = parse_title(text) or fallback_title(published_date)
             doc_no = doc_match.group(1)
             return Report(
                 doc_no=doc_no,
-                title=title_match.group(1),
-                department=department,
-                published_date=date_match.group(1),
+                title=title,
+                department="감염병관리과" if "감염병관리과" in text else "",
+                published_date=published_date,
                 url=report_url(doc_no),
             )
 
-    text = strip_tags(list_html)
-    title_match = re.search(r"(20\d{2}년\s+감염병\s+표본감시\s+주간소식지\s+\d+주차)", text)
+    text = repair_mojibake(strip_tags(list_html))
     date_match = re.search(r"(20\d{2}\.\d{2}\.\d{2})", text)
-    if title_match and date_match and fallback_doc_numbers:
+    if date_match and fallback_doc_numbers:
+        published_date = date_match.group(1)
         doc_no = fallback_doc_numbers[0]
         return Report(
             doc_no=doc_no,
-            title=title_match.group(1),
+            title=parse_title(text) or fallback_title(published_date),
             department="감염병관리과",
-            published_date=date_match.group(1),
+            published_date=published_date,
             url=report_url(doc_no),
         )
 
@@ -234,7 +269,7 @@ def send_kakao_message(access_token: str, report: Report, *, verify_ssl: bool) -
     )
     result = json.loads(response)
     if result.get("result_code") != 0:
-        raise RuntimeError(f"카카오톡 전송 실패: {response}")
+        raise RuntimeError(f"카카오톡 메시지 전송 실패: {response}")
 
 
 def run(config_path: Path, *, dry_run: bool, force: bool) -> int:

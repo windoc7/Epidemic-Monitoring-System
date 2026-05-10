@@ -54,9 +54,10 @@ class OAuthHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         if OAuthHandler.auth_code:
-            self.wfile.write("카카오 인증이 완료되었습니다. 이 창을 닫아도 됩니다.".encode("utf-8"))
+            message = "Kakao authorization is complete. You can close this window."
         else:
-            self.wfile.write("카카오 인증 코드를 받지 못했습니다.".encode("utf-8"))
+            message = "Could not receive the Kakao authorization code."
+        self.wfile.write(message.encode("utf-8"))
 
 
 def post_form(url: str, payload: dict[str, str], *, verify_ssl: bool) -> dict:
@@ -96,13 +97,13 @@ def main() -> int:
         }
     )
 
-    print("Kakao Developers에 아래 Redirect URI가 등록되어 있어야 합니다.")
+    print("Make sure this Redirect URI is registered in Kakao Developers:")
     print(REDIRECT_URI)
     print()
-    print("브라우저에서 아래 주소를 열고 카카오 인증을 완료하세요.")
+    print("Open this URL in your browser and complete Kakao authorization:")
     print(auth_url)
     print()
-    print("인증 완료를 기다리는 중입니다...")
+    print("Waiting for authorization...")
 
     server = HTTPServer(("localhost", 8765), OAuthHandler)
     while OAuthHandler.auth_code is None and OAuthHandler.auth_error is None:
