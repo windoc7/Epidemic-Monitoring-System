@@ -26,6 +26,7 @@ from typing import Any
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG = BASE_DIR / "config.json"
 DEFAULT_STATE = BASE_DIR / "state.json"
+DEFAULT_LOGO = BASE_DIR / "choice_ent_logo.png"
 
 
 KDCA_LIST_URL = (
@@ -338,11 +339,24 @@ def draw_card(draw: Any, box: tuple[int, int, int, int], *, radius: int, fill: s
     draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline)
 
 
+def paste_logo(image: Any, logo_path: Path, box: tuple[int, int, int, int]) -> None:
+    from PIL import Image
+
+    if not logo_path.exists():
+        return
+    logo = Image.open(logo_path).convert("RGBA")
+    width, height = box[2] - box[0], box[3] - box[1]
+    logo.thumbnail((width, height))
+    x = box[0] + (width - logo.width) // 2
+    y = box[1] + (height - logo.height) // 2
+    image.alpha_composite(logo, (x, y))
+
+
 def render_summary_image(report: Report, summary: ReportSummary, output_path: Path) -> None:
     from PIL import Image, ImageDraw
 
     width, height = 1080, 1500
-    image = Image.new("RGB", (width, height), "#08111f")
+    image = Image.new("RGBA", (width, height), "#08111fff")
     draw = ImageDraw.Draw(image)
 
     title_font = find_font(58, bold=True)
@@ -366,11 +380,12 @@ def render_summary_image(report: Report, summary: ReportSummary, output_path: Pa
     draw.rounded_rectangle((64, 56, 1016, 1444), radius=46, fill="#f8fafc")
 
     draw.rounded_rectangle((64, 56, 1016, 260), radius=46, fill="#0f172a")
-    draw.text((104, 88), "CHOICE ENT CLINIC", font=eyebrow_font, fill="#67e8f9")
-    draw.text((104, 124), "초이스 이비인후과", font=title_font, fill="#ffffff")
+    paste_logo(image, DEFAULT_LOGO, (100, 84, 210, 194))
+    draw.text((238, 88), "CHOICE ENT CLINIC", font=eyebrow_font, fill="#67e8f9")
+    draw.text((238, 124), "초이스 이비인후과", font=title_font, fill="#ffffff")
     draw.rounded_rectangle((742, 96, 930, 150), radius=22, fill="#ecfeff")
     draw.text((770, 109), "KDCA DATA", font=eyebrow_font, fill="#0891b2")
-    draw.text((106, 204), f"호흡기 감염병 모니터링 · {report.published_date} · {summary.week}주차", font=subtitle_font, fill="#cbd5e1")
+    draw.text((238, 204), f"호흡기 감염병 모니터링 · {report.published_date} · {summary.week}주차", font=subtitle_font, fill="#cbd5e1")
 
     def metric_card(box: tuple[int, int, int, int], label: str, value: str, note: str, accent: str) -> None:
         x1, y1, x2, y2 = box
@@ -427,7 +442,7 @@ def render_summary_image(report: Report, summary: ReportSummary, output_path: Pa
     draw.text((134, 1378), "질병관리청 감염병포털 최신 주간소식지 기반 · 원문 링크는 카카오 메시지에서 확인", font=small_font, fill="#334155")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(output_path, "PNG", optimize=True)
+    image.convert("RGB").save(output_path, "PNG", optimize=True)
 
 
 def refresh_kakao_token(config: dict[str, Any], config_path: Path) -> str:
