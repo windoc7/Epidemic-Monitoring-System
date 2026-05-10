@@ -250,7 +250,7 @@ def send_kakao_message(access_token: str, report: Report, *, verify_ssl: bool) -
         f"{report.title}\n"
         f"등록일: {report.published_date}\n"
         "질병관리청 감염병포털에 최신 주간소식지가 올라왔습니다.\n"
-        "아래 버튼에서 원문을 확인하세요."
+        f"원문 링크: {report.url}"
     )
     template_object = {
         "object_type": "text",
