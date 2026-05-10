@@ -17,7 +17,7 @@ import ssl
 import sys
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -55,6 +55,14 @@ class ReportSummary:
     ari_cases: str
     ari_delta: str
     key_viruses: list[tuple[str, str]]
+    ari_trend: list[tuple[str, float]] = field(default_factory=list)
+    epidemic_threshold: float = 0.0
+    corona_cases: str = "-"
+    corona_delta: str = "-"
+    corona_trend: list[tuple[str, float]] = field(default_factory=list)
+    enteric_cases: str = "-"
+    enteric_delta: str = "-"
+    enteric_viruses: list[tuple[str, str]] = field(default_factory=list)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -246,8 +254,14 @@ def extract_weekly_trend(text: str, heading: str) -> list[tuple[str, float]]:
     if not match:
         return []
     window = match.group(1)
-    values = re.findall(r"\((\d+주)\)\s*(\d+(?:\.\d+)?)\s*명", window)
-    return [(week, float(value)) for week, value in values[-5:]]
+    values = re.findall(r"\((\d+주)\)\s*(\d+(?:\.\d+)?)\s*(?:명|‰)", window)
+    return [(week, float(value)) for week, value in values[-12:]]
+
+
+def extract_section_trend(section_text: str) -> list[tuple[str, float]]:
+    """Extract (주) N명 trend from a text section."""
+    values = re.findall(r"\((\d+주)\)\s*(\d+(?:\.\d+)?)\s*명", section_text)
+    return [(w, float(v)) for w, v in values[-12:]]
 
 
 def extract_report_summary(report: Report, text: str) -> ReportSummary:
@@ -261,7 +275,11 @@ def extract_report_summary(report: Report, text: str) -> ReportSummary:
         text,
     )
 
-    influenza_direction = "증가" if re.search(r"인플루엔자[^.。]*전주[^.。]*증가", text) else "감소"
+    flu_trend_tmp = extract_weekly_trend(text, "의사환자분율 추이")
+    if len(flu_trend_tmp) >= 2:
+        influenza_direction = "증가" if flu_trend_tmp[-1][1] >= flu_trend_tmp[-2][1] else "감소"
+    else:
+        influenza_direction = "증가" if re.search(r"인플루엔자[^.。]*전주[^.。]*증가", text) else "감소"
 
     ari_cases_raw = search_value(
         [
@@ -309,6 +327,96 @@ def extract_report_summary(report: Report, text: str) -> ReportSummary:
             seen_labels.add(label)
     key_viruses = key_viruses[:5]
 
+    # ARI 추이 - 급성호흡기감염증 섹션에서 추출
+    ari_trend = extract_section_trend(ari_section)
+    if not ari_trend:
+        ari_trend = extract_weekly_trend(text, "급성호흡기감염증 추이")
+
+    # 유행 기준치
+    threshold_raw = search_value(
+        [r"유행기준\s*[\(（]?\s*(\d+(?:\.\d+)?)\s*명",
+         r"(\d+(?:\.\d+)?)\s*명.*?유행기준",
+         r"기준값\s*:?\s*(\d+(?:\.\d+)?)"],
+        text,
+    )
+    epidemic_threshold = float(threshold_raw) if threshold_raw != "-" else 8.6
+
+    # 코로나19 섹션 추출
+    covid_section_match = re.search(r"코로나19(.*?)(?:\d+\.\s*급성호흡기|장관감염|병원체 감시|$)", text, re.DOTALL)
+    covid_section = covid_section_match.group(1) if covid_section_match else ""
+
+    corona_raw = search_value(
+        [r"입원환자\s*수\s*(\d{1,3}(?:,\d{3})*|\d+)\s*명",
+         r"코로나19[^.。]*?(\d{1,3}(?:,\d{3})*|\d+)\s*명"],
+        covid_section or text,
+    )
+    corona_prev_raw = search_value(
+        [r"전주\((\d{1,3}(?:,\d{3})*|\d+)\s*명\)"],
+        covid_section or text,
+    )
+    corona_delta = "-"
+    if corona_raw != "-" and corona_prev_raw != "-":
+        diff = int(corona_raw.replace(",", "")) - int(corona_prev_raw.replace(",", ""))
+        corona_delta = f"{abs(diff):,}명 {'증가' if diff >= 0 else '감소'}"
+
+    # 코로나 현재값: 코로나19 섹션 첫 번째 명 숫자
+    if corona_raw == "-" and covid_section:
+        m = re.search(r"(\d{1,3})\s*명", covid_section)
+        if m:
+            corona_raw = m.group(1)
+    if corona_prev_raw == "-" and covid_section:
+        m = re.search(r"전주\((\d+)\s*명\)", covid_section)
+        if m:
+            corona_prev_raw = m.group(1)
+    if corona_raw != "-" and corona_prev_raw != "-" and corona_delta == "-":
+        try:
+            diff = int(corona_raw.replace(",", "")) - int(corona_prev_raw.replace(",", ""))
+            corona_delta = f"{abs(diff):,}명 {'증가' if diff >= 0 else '감소'}"
+        except ValueError:
+            pass
+
+    # 코로나 추이: 입원환자 수 추이 섹션만 (첫 번째 시리즈)
+    corona_trend: list[tuple[str, float]] = []
+    if covid_section:
+        trend_match = re.search(r"입원환자\s*수\s*추이\s*:(.*?)(?:-|병원체|$)", covid_section)
+        if trend_match:
+            pairs = re.findall(r"\((\d+주)\)\s*(\d+)\s*명", trend_match.group(1))
+            corona_trend = [(w, float(v)) for w, v in pairs]
+        if not corona_trend:
+            # fallback: 첫 4개 (주) 명 쌍
+            pairs = re.findall(r"\((\d+주)\)\s*(\d+)\s*명", covid_section)
+            corona_trend = [(w, float(v)) for w, v in pairs[:4]]
+
+    # 장관감염증
+    enteric_section_match = re.search(r"장관감염증(.*?)(?:\d+\.\s*|$)", text, re.DOTALL)
+    enteric_section = enteric_section_match.group(1) if enteric_section_match else ""
+    enteric_raw = search_value(
+        [r"장관감염증[^.。]*?총?\s*(\d{1,3}(?:,\d{3})*|\d+)\s*(?:명|건)",
+         r"장관감염증[^.。]*?(\d{1,3}(?:,\d{3})*|\d+)\s*(?:명|건)"],
+        text,
+    )
+    enteric_prev = search_value(
+        [r"장관감염증[^.。]*?전주\((\d{1,3}(?:,\d{3})*|\d+)\s*(?:명|건)\)"],
+        text,
+    )
+    enteric_delta = "-"
+    if enteric_raw != "-" and enteric_prev != "-":
+        diff = int(enteric_raw.replace(",", "")) - int(enteric_prev.replace(",", ""))
+        enteric_delta = f"{abs(diff):,}명 {'증가' if diff >= 0 else '감소'}"
+
+    enteric_aliases = [
+        ("노로바이러스", "노로"),
+        ("로타바이러스", "로타"),
+        ("아스트로바이러스", "아스트로"),
+        ("장아데노바이러스", "장아데노"),
+        ("살모넬라", "살모넬라"),
+    ]
+    enteric_viruses: list[tuple[str, str]] = []
+    for full, label in enteric_aliases:
+        v = search_value([rf"{full}[^.。]*?(\d+(?:\.\d+)?)\s*%"], enteric_section)
+        if v != "-":
+            enteric_viruses.append((label, f"{v}%"))
+
     return ReportSummary(
         week=week,
         influenza=f"{influenza}‰" if influenza != "-" else "-",
@@ -317,6 +425,14 @@ def extract_report_summary(report: Report, text: str) -> ReportSummary:
         ari_cases=f"{ari_cases_raw}명" if ari_cases_raw != "-" else "-",
         ari_delta=ari_delta,
         key_viruses=key_viruses,
+        ari_trend=ari_trend,
+        epidemic_threshold=epidemic_threshold,
+        corona_cases=f"{corona_raw}명" if corona_raw != "-" else "-",
+        corona_delta=corona_delta,
+        corona_trend=corona_trend,
+        enteric_cases=f"{enteric_raw}명" if enteric_raw != "-" else "-",
+        enteric_delta=enteric_delta,
+        enteric_viruses=enteric_viruses,
     )
 
 
@@ -480,28 +596,21 @@ def refresh_kakao_token(config: dict[str, Any], config_path: Path) -> str:
 
 def send_kakao_message(access_token: str, report: Report, summary: ReportSummary, config: dict[str, Any], *, verify_ssl: bool) -> None:
     page_url = config.get("report_page_url") or os.environ.get("REPORT_PAGE_URL") or report.url
-    image_url = config.get("report_image_url") or os.environ.get("REPORT_IMAGE_URL")
 
-    viruses = "\n".join(f"- {name}: {value}" for name, value in summary.key_viruses[:4])
-    description = (
+    viruses = " | ".join(f"{name} {value}" for name, value in summary.key_viruses[:4])
+    text = (
+        f"[초이스 이비인후과] 호흡기 감염병 리포트 {summary.week}주차\n\n"
         f"인플루엔자: {summary.influenza} ({summary.influenza_direction})\n"
-        f"기타호흡기감염증: {summary.ari_cases}\n"
-        f"전주 대비: {summary.ari_delta}\n\n"
-        f"주요 바이러스\n{viruses}"
-    )[:180]
-
-    content: dict[str, Any] = {
-        "title": f"초이스 이비인후과 호흡기 감염병 리포트 {summary.week}주차",
-        "description": description,
-        "link": {"web_url": page_url, "mobile_web_url": page_url},
-    }
-    if image_url:
-        content.update({"image_url": image_url, "image_width": 1080, "image_height": 1500})
+        f"기타호흡기감염증: {summary.ari_cases} ({summary.ari_delta})\n"
+        f"주요 바이러스: {viruses}\n\n"
+        f"{page_url}"
+    )
 
     template_object = {
-        "object_type": "feed",
-        "content": content,
-        "buttons": [{"title": "리포트 보기", "link": {"web_url": page_url, "mobile_web_url": page_url}}],
+        "object_type": "text",
+        "text": text[:1000],
+        "link": {"web_url": page_url, "mobile_web_url": page_url},
+        "button_title": "리포트 보기",
     }
 
     response = request_text(
@@ -545,12 +654,35 @@ def run(config_path: Path, *, dry_run: bool, force: bool) -> int:
     send_kakao_message(access_token, latest_report, summary, config, verify_ssl=verify_ssl)
 
     if not disable_state:
+        history = state.get("weekly_history", {})
+        try:
+            ari_num = int(summary.ari_cases.replace("명", "").replace(",", "").strip())
+        except (ValueError, AttributeError):
+            ari_num = 0
+        try:
+            corona_num = int(summary.corona_cases.replace("명", "").replace(",", "").strip())
+        except (ValueError, AttributeError):
+            corona_num = 0
+        try:
+            enteric_num = int(summary.enteric_cases.replace("명", "").replace("건", "").replace(",", "").strip())
+        except (ValueError, AttributeError):
+            enteric_num = 0
+        history[summary.week] = {
+            "influenza": float(re.sub(r"[^0-9.]", "", summary.influenza) or "0"),
+            "ari": ari_num,
+            "corona": corona_num,
+            "enteric": enteric_num,
+        }
+        if len(history) > 20:
+            weeks_sorted = sorted(history.keys(), key=lambda w: int(w) if w.isdigit() else 0)
+            history = {w: history[w] for w in weeks_sorted[-20:]}
         state.update(
             {
                 "last_sent_doc_no": latest_report.doc_no,
                 "last_sent_title": latest_report.title,
                 "last_sent_url": latest_report.url,
                 "last_sent_at": datetime.now().isoformat(timespec="seconds"),
+                "weekly_history": history,
             }
         )
         save_json(state_path, state)

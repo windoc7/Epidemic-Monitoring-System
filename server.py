@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import html
+import math
 import os
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,11 +20,34 @@ from kdca_kakao_report import (
     request_text,
 )
 
-
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "latest_report.png"
-
+STATE_PATH = BASE_DIR / "state.json"
 _cache: dict = {}
+
+
+def _load_history(key: str) -> list[tuple[str, float]]:
+    try:
+        import json
+        with STATE_PATH.open(encoding="utf-8") as f:
+            state = json.load(f)
+        history = state.get("weekly_history", {})
+        if not history:
+            return []
+        weeks = sorted(history.keys(), key=lambda w: int(w) if w.isdigit() else 0)
+        return [(f"{w}주", history[w][key]) for w in weeks if history[w].get(key)]
+    except Exception:
+        return []
+
+
+def load_ari_history() -> list[tuple[str, float]]:
+    return _load_history("ari")
+
+
+def load_enteric_history() -> list[tuple[str, float]]:
+    return _load_history("enteric")
+
+VIRUS_COLORS = ["#3b82f6", "#14b8a6", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#6b7280"]
 
 
 def verify_ssl() -> bool:
@@ -41,321 +66,249 @@ def load_report() -> tuple[object, object]:
     return _cache["report"], _cache["summary"]
 
 
-def number_from(value: str) -> float:
-    import re
+def num(value: str) -> float:
     return float(re.sub(r"[^0-9.]", "", value) or "0")
+
+
+def line_chart_svg(trend: list, color: str, grad_id: str) -> str:
+    if not trend:
+        return '<text x="150" y="60" text-anchor="middle" fill="#94a3b8" font-size="13">데이터 없음</text>'
+    values = [v for _, v in trend]
+    weeks = [w for w, _ in trend]
+    lo, hi = min(values), max(values)
+    span = max(hi - lo, 0.5)
+    W, H, pl, pr, pt, pb = 340, 100, 42, 10, 8, 22
+    cw = W - pl - pr
+    n = len(values)
+    step = cw / max(n - 1, 1)
+
+    pts = [(pl + i * step, pt + (1 - (v - lo) / span) * H) for i, v in enumerate(values)]
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    area = line + f" {pts[-1][0]:.1f},{pt+H} {pts[0][0]:.1f},{pt+H}"
+
+    grid = "".join(
+        f'<line x1="{pl}" y1="{pt + (1-(v-lo)/span)*H:.1f}" x2="{W-pr}" y2="{pt + (1-(v-lo)/span)*H:.1f}" stroke="#f1f5f9" stroke-width="1"/>'
+        f'<text x="{pl-4}" y="{pt + (1-(v-lo)/span)*H:.1f}" text-anchor="end" dominant-baseline="middle" fill="#94a3b8" font-size="9">{v:.0f}</text>'
+        for v in [lo, (lo+hi)/2, hi]
+    )
+    dots = "".join(
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.5" fill="{color}" stroke="white" stroke-width="2"/>'
+        for x, y in pts
+    )
+    xlabels = "".join(
+        f'<text x="{x:.1f}" y="{pt+H+pb-2}" text-anchor="middle" fill="#94a3b8" font-size="9">{html.escape(w)}</text>'
+        for (x, _), w in zip(pts, weeks)
+    )
+    last_x, last_y = pts[-1]
+    last_label = f"{values[-1]:.1f}" if values[-1] < 100 else f"{int(values[-1]):,}"
+    tag_x = min(last_x, W - pr - 22)
+    tag = (f'<rect x="{tag_x-20:.1f}" y="{last_y-22:.1f}" width="42" height="16" rx="8" fill="{color}"/>'
+           f'<text x="{tag_x+1:.1f}" y="{last_y-11:.1f}" text-anchor="middle" fill="white" font-size="9" font-weight="700">{last_label}</text>')
+
+    return f"""<svg viewBox="0 0 {W} {pt+H+pb}" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="{grad_id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="{color}" stop-opacity=".2"/><stop offset="100%" stop-color="{color}" stop-opacity="0"/></linearGradient></defs>
+  {grid}
+  <polygon points="{area}" fill="url(#{grad_id})"/>
+  <polyline points="{line}" fill="none" stroke="{color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  {dots}{tag}{xlabels}
+</svg>"""
+
+
+def donut_svg(viruses: list) -> tuple[str, str]:
+    if not viruses:
+        return '<text x="80" y="84" text-anchor="middle" fill="#94a3b8" font-size="11">데이터 없음</text>', ""
+    total = sum(num(v) for _, v in viruses) or 1
+    cx, cy, ro, ri = 80, 80, 70, 42
+    paths, legend = [], []
+    angle = -90.0
+    for i, (name, val) in enumerate(viruses[:6]):
+        pct = num(val) / total
+        sweep = pct * 360
+        if sweep < 0.5:
+            continue
+        color = VIRUS_COLORS[i % len(VIRUS_COLORS)]
+        end = angle + sweep
+        large = 1 if sweep > 180 else 0
+        def pt(r: float, a: float) -> str:
+            rad = math.radians(a)
+            return f"{cx + r*math.cos(rad):.2f},{cy + r*math.sin(rad):.2f}"
+        d = f"M{pt(ro,angle)} A{ro},{ro},0,{large},1,{pt(ro,end)} L{pt(ri,end)} A{ri},{ri},0,{large},0,{pt(ri,angle)}Z"
+        paths.append(f'<path d="{d}" fill="{color}" stroke="white" stroke-width="2"/>')
+        legend.append(
+            f'<div class="leg-row"><span class="leg-dot" style="background:{color}"></span>'
+            f'<span class="leg-name">{html.escape(name)}</span>'
+            f'<span class="leg-val">{html.escape(val)}</span></div>'
+        )
+        angle = end
+    return "\n".join(paths), "\n".join(legend)
 
 
 def render_html() -> str:
     report, summary = load_report()
-    trend = summary.influenza_trend
-    virus_items = summary.key_viruses[:4]
-    max_virus = max([number_from(value) for _, value in virus_items] or [1])
-    trend_values = [value for _, value in trend] or [0]
-    min_trend, max_trend = min(trend_values), max(trend_values)
-    trend_span = max(max_trend - min_trend, 1)
+    flu_svg = line_chart_svg(summary.influenza_trend, "#fb923c", "ag")
+    ari_history = load_ari_history()
+    ari_svg = line_chart_svg(ari_history or summary.ari_trend, "#a78bfa", "bg")
+    enteric_history = load_enteric_history()
+    enteric_trend_svg = line_chart_svg(enteric_history, "#34d399", "eg") if enteric_history else ""
+    corona_svg = line_chart_svg(summary.corona_trend, "#22d3ee", "cg")
+    donut_paths, legend_html = donut_svg(summary.key_viruses)
+    enteric_donut, enteric_legend = donut_svg(summary.enteric_viruses)
+    top_virus = summary.key_viruses[0] if summary.key_viruses else ("—", "—")
+    direction_icon = "▲" if summary.influenza_direction == "증가" else "▼"
+    direction_color = "#fb923c" if summary.influenza_direction == "증가" else "#34d399"
+    flu_val = num(summary.influenza.replace("‰", ""))
+    is_epidemic = flu_val >= summary.epidemic_threshold
+    epidemic_label = "유행중" if is_epidemic else "유행 아님"
+    epidemic_color = "#ef4444" if is_epidemic else "#10b981"
+    epidemic_bg = "rgba(239,68,68,.2)" if is_epidemic else "rgba(16,185,129,.15)"
 
-    points = []
-    for index, (week, value) in enumerate(trend):
-        x = 8 + index * (84 / max(len(trend) - 1, 1))
-        y = 78 - ((value - min_trend) / trend_span) * 58
-        points.append(f"{x:.1f},{y:.1f}")
-
-    virus_html = "\n".join(
-        f"""
-        <div class="virus-row">
-          <div class="virus-name">{html.escape(name)}</div>
-          <div class="virus-track"><span style="width:{number_from(value) / max_virus * 100:.1f}%"></span></div>
-          <div class="virus-value">{html.escape(value)}</div>
-        </div>
-        """
-        for name, value in virus_items
-    )
-    trend_labels = "\n".join(f"<span>{html.escape(week)}</span>" for week, _ in trend)
+    flu5_svg = line_chart_svg(summary.influenza_trend[-5:], "#fb923c", "fg")
 
     return f"""<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta property="og:title" content="초이스 이비인후과 호흡기 감염병 리포트">
-  <meta property="og:description" content="{summary.week}주차 자동 요약 · 인플루엔자 {summary.influenza} · 기타호흡기 {summary.ari_cases}">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta property="og:title" content="호흡기 감염병 모니터링">
   <meta property="og:image" content="/latest_report.png">
-  <title>초이스 이비인후과 호흡기 감염병 리포트</title>
+  <title>호흡기 감염병 모니터링</title>
   <style>
-    :root {{
-      color-scheme: light;
-      --navy:#08111f;
-      --navy2:#0f172a;
-      --ink:#111827;
-      --muted:#64748b;
-      --line:#dbe3ef;
-      --cyan:#22d3ee;
-      --blue:#2563eb;
-      --green:#10b981;
-      --red:#f43f5e;
-      --orange:#f59e0b;
-      --purple:#8b5cf6;
-    }}
-    * {{ box-sizing:border-box; }}
-    body {{
-      margin:0;
-      min-height:100vh;
-      font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
-      background:
-        radial-gradient(circle at 85% 0%, rgba(20,184,166,.28), transparent 28rem),
-        radial-gradient(circle at 0% 78%, rgba(37,99,235,.22), transparent 26rem),
-        linear-gradient(145deg, #07111f 0%, #11233e 55%, #07111f 100%);
-      color:var(--ink);
-    }}
-    main {{
-      width:min(1120px, calc(100% - 32px));
-      margin:0 auto;
-      padding:44px 0 56px;
-    }}
-    .shell {{
-      background:#f8fafc;
-      border-radius:38px;
-      overflow:hidden;
-      box-shadow:0 28px 90px rgba(0,0,0,.34);
-      border:1px solid rgba(255,255,255,.22);
-    }}
-    .hero {{
-      position:relative;
-      display:grid;
-      grid-template-columns:128px 1fr auto;
-      gap:28px;
-      align-items:center;
-      padding:42px;
-      background:linear-gradient(135deg, #0f172a 0%, #111b31 56%, #0a2a42 100%);
-      color:white;
-    }}
-    .logo {{
-      width:112px;
-      height:112px;
-      object-fit:contain;
-      filter:drop-shadow(0 12px 18px rgba(0,0,0,.24));
-    }}
-    .eyebrow {{
-      color:var(--cyan);
-      font-size:20px;
-      font-weight:800;
-      letter-spacing:.08em;
-    }}
-    h1 {{
-      margin:8px 0 10px;
-      font-size:64px;
-      line-height:1.05;
-      letter-spacing:0;
-    }}
-    .sub {{
-      color:#cbd5e1;
-      font-size:24px;
-    }}
-    .badge {{
-      align-self:start;
-      padding:16px 24px;
-      border-radius:999px;
-      background:#ecfeff;
-      color:#0e7490;
-      font-weight:900;
-      font-size:20px;
-    }}
-    .content {{ padding:34px 42px 42px; }}
-    .metrics {{
-      display:grid;
-      grid-template-columns:repeat(4, 1fr);
-      gap:22px;
-    }}
-    .card {{
-      background:white;
-      border:1px solid var(--line);
-      border-radius:24px;
-      padding:26px;
-      min-height:190px;
-      box-shadow:0 12px 36px rgba(15,23,42,.06);
-    }}
-    .pill {{
-      display:inline-flex;
-      padding:8px 18px;
-      border-radius:999px;
-      color:white;
-      font-weight:900;
-      font-size:18px;
-    }}
-    .value {{
-      margin-top:28px;
-      font-size:54px;
-      line-height:1;
-      font-weight:900;
-      color:var(--navy2);
-    }}
-    .note {{
-      margin-top:8px;
-      color:var(--muted);
-      font-size:21px;
-    }}
-    .grid {{
-      display:grid;
-      grid-template-columns:1.1fr .9fr;
-      gap:24px;
-      margin-top:24px;
-    }}
-    .panel {{
-      border-radius:28px;
-      padding:32px;
-      background:var(--navy2);
-      color:white;
-      min-height:330px;
-    }}
-    .panel.light {{
-      background:white;
-      color:var(--ink);
-      border:1px solid var(--line);
-    }}
-    .panel-title {{
-      display:flex;
-      justify-content:space-between;
-      align-items:baseline;
-      gap:20px;
-      font-size:34px;
-      font-weight:900;
-      margin-bottom:22px;
-    }}
-    .panel-title strong {{
-      color:#67e8f9;
-      font-size:58px;
-    }}
-    .chart {{
-      width:100%;
-      height:180px;
-      overflow:visible;
-    }}
-    .axis {{
-      display:flex;
-      justify-content:space-between;
-      color:#94a3b8;
-      font-size:19px;
-      margin:0 8px;
-    }}
-    .virus-row {{
-      display:grid;
-      grid-template-columns:120px 1fr 72px;
-      align-items:center;
-      gap:18px;
-      margin:20px 0;
-      font-size:22px;
-      font-weight:800;
-    }}
-    .virus-track {{
-      height:22px;
-      background:#e2e8f0;
-      border-radius:999px;
-      overflow:hidden;
-    }}
-    .virus-track span {{
-      display:block;
-      height:100%;
-      border-radius:999px;
-      background:linear-gradient(90deg, var(--blue), var(--cyan));
-    }}
-    .source {{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:18px;
-      margin-top:24px;
-      padding:22px 26px;
-      border-radius:22px;
-      background:#e8eef6;
-      color:#334155;
-      font-size:18px;
-    }}
-    .source a {{
-      color:#0f766e;
-      font-weight:900;
-      text-decoration:none;
-    }}
-    @media (max-width: 860px) {{
-      main {{ width:100%; padding:0; }}
-      .shell {{ border-radius:0; min-height:100vh; }}
-      .hero {{ grid-template-columns:74px 1fr; padding:28px 22px; gap:18px; }}
-      .logo {{ width:70px; height:70px; }}
-      .badge {{ grid-column:1 / -1; justify-self:start; font-size:15px; padding:10px 16px; }}
-      h1 {{ font-size:38px; }}
-      .sub {{ font-size:17px; }}
-      .content {{ padding:22px; }}
-      .metrics {{ grid-template-columns:repeat(2, 1fr); gap:14px; }}
-      .card {{ padding:18px; min-height:150px; border-radius:20px; }}
-      .value {{ font-size:36px; }}
-      .note {{ font-size:15px; }}
-      .grid {{ grid-template-columns:1fr; }}
-      .panel-title {{ font-size:25px; }}
-      .panel-title strong {{ font-size:42px; }}
-      .virus-row {{ grid-template-columns:90px 1fr 64px; font-size:18px; gap:12px; }}
-      .source {{ align-items:flex-start; flex-direction:column; font-size:15px; }}
-    }}
+    @font-face{{font-family:"LaundryGothic";src:url("/fonts/laundry-bold.woff") format("woff");font-weight:700;font-style:normal}}
+    @font-face{{font-family:"LaundryGothic";src:url("/fonts/laundry-regular.woff") format("woff");font-weight:400;font-style:normal}}
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{font-family:"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;background:#0d1117;height:100vh;overflow:hidden;color:#fff}}
+    .wrap{{max-width:1400px;margin:0 auto;padding:14px 24px 10px;height:100vh;display:flex;flex-direction:column;gap:10px}}
+
+    /* header */
+    .hdr{{display:flex;align-items:center;gap:16px;flex-shrink:0}}
+    .hdr-week{{font-size:22px;font-weight:900;color:#60a5fa;background:rgba(59,130,246,.15);padding:4px 14px;border-radius:10px;white-space:nowrap}}
+    .hdr-title{{font-family:"LaundryGothic",sans-serif;font-size:28px;font-weight:700;letter-spacing:3px;background:linear-gradient(90deg,#e2e8f0 0%,#ffffff 40%,#94a3b8 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;flex:1}}
+    .hdr-right{{display:flex;align-items:center;gap:8px}}
+    .hdr-logo{{width:36px;height:36px;object-fit:contain;border-radius:8px;background:rgba(255,255,255,.05);padding:3px}}
+    .hdr-info{{text-align:right;color:#475569;font-size:11px;line-height:1.6}}
+    .hdr-info strong{{color:#64748b;font-size:12px;font-weight:700;display:block}}
+
+    /* main grid */
+    .main{{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;flex:1;min-height:0}}
+
+    /* section card */
+    .sec{{border-radius:16px;overflow:hidden;display:flex;flex-direction:column;min-height:0}}
+    .sec-head{{padding:12px 16px 8px;display:flex;align-items:center;gap:10px;flex-shrink:0}}
+    .sec-icon{{font-size:20px}}
+    .sec-name{{font-size:11px;font-weight:700;letter-spacing:.5px;opacity:.8;text-transform:uppercase}}
+    .sec-body{{padding:0 16px 12px;flex:1;display:flex;flex-direction:column;min-height:0}}
+    .sec-val{{font-size:clamp(22px,2.5vw,34px);font-weight:900;line-height:1;margin-bottom:4px}}
+    .sec-sub{{font-size:11px;opacity:.7;font-weight:600;margin-bottom:6px}}
+    .sec-chart{{flex:1;min-height:0;overflow:hidden}}
+    .sec-chart svg{{width:100%;height:100%;display:block}}
+
+    .s-flu{{background:linear-gradient(150deg,#7c2d12,#c2410c,#ea580c)}}
+    .s-corona{{background:linear-gradient(150deg,#164e63,#0e7490,#06b6d4)}}
+    .s-enteric{{background:linear-gradient(150deg,#064e3b,#047857,#10b981)}}
+    .s-virus{{background:#161b22;border:1px solid rgba(255,255,255,.07)}}
+
+    /* bottom row spans */
+    .span3{{grid-column:1 / -1}}
+
+    /* donut+trend panel */
+    .virus-panel{{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;height:100%;padding:12px 16px}}
+    .virus-title{{font-size:12px;font-weight:700;color:#64748b;margin-bottom:10px}}
+    .donut-area{{display:flex;align-items:center;gap:14px}}
+    .donut-area svg{{width:130px;height:130px;flex-shrink:0}}
+    .leg-row{{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px}}
+    .leg-dot{{width:10px;height:10px;border-radius:50%;flex-shrink:0}}
+    .leg-name{{flex:1;font-weight:600;color:#e2e8f0}}
+    .leg-val{{color:#64748b;font-size:11px;font-weight:700}}
+
+    /* footer */
+    .footer{{flex-shrink:0;display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-top:1px solid rgba(255,255,255,.05)}}
+    .footer-src{{font-size:11px;color:#334155}}
+    .footer-src a{{color:#475569;font-weight:700;text-decoration:none}}
+    .footer-players{{font-size:15px;font-weight:900;background:linear-gradient(90deg,#f97316,#f59e0b,#84cc16,#22d3ee,#818cf8,#e879f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}}
   </style>
 </head>
 <body>
-<main>
-  <section class="shell">
-    <header class="hero">
-      <img class="logo" src="/logo.png" alt="초이스 이비인후과 로고">
-      <div>
-        <div class="eyebrow">CHOICE ENT CLINIC</div>
-        <h1>초이스 이비인후과</h1>
-        <div class="sub">호흡기 감염병 모니터링 · {html.escape(report.published_date)} · {html.escape(summary.week)}주차</div>
-      </div>
-      <div class="badge">KDCA DATA</div>
-    </header>
-    <div class="content">
-      <section class="metrics">
-        <article class="card">
-          <span class="pill" style="background:var(--blue)">WEEK</span>
-          <div class="value">{html.escape(summary.week)}주차</div>
-          <div class="note">현재 보고 주차</div>
-        </article>
-        <article class="card">
-          <span class="pill" style="background:var(--red)">ILI</span>
-          <div class="value">{html.escape(summary.influenza)}</div>
-          <div class="note">전주 대비 {html.escape(summary.influenza_direction)}</div>
-        </article>
-        <article class="card">
-          <span class="pill" style="background:var(--green)">ARI</span>
-          <div class="value">{html.escape(summary.ari_cases)}</div>
-          <div class="note">급성호흡기 입원환자</div>
-        </article>
-        <article class="card">
-          <span class="pill" style="background:var(--orange)">DELTA</span>
-          <div class="value">{html.escape(summary.ari_delta)}</div>
-          <div class="note">전주 대비</div>
-        </article>
-      </section>
+<div class="wrap">
 
-      <section class="grid">
-        <article class="panel">
-          <div class="panel-title"><span>인플루엔자 의사환자분율 추이</span><strong>{html.escape(summary.influenza)}</strong></div>
-          <svg class="chart" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <line x1="8" y1="82" x2="92" y2="82" stroke="#334155" stroke-width="1" />
-            <polyline points="{' '.join(points)}" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-            {''.join(f'<circle cx="{point.split(",")[0]}" cy="{point.split(",")[1]}" r="2.4" fill="#ffffff" stroke="#38bdf8" stroke-width="1.6"/>' for point in points)}
-          </svg>
-          <div class="axis">{trend_labels}</div>
-        </article>
-        <article class="panel light">
-          <div class="panel-title"><span>주요 바이러스 분포</span></div>
-          {virus_html}
-        </article>
-      </section>
-
-      <div class="source">
-        <span>질병관리청 감염병포털 최신 주간소식지 기반 자동 요약</span>
-        <a href="{html.escape(report.url)}" target="_blank" rel="noreferrer">원문 보기</a>
+  <div class="hdr">
+    <div class="hdr-week">📅 {html.escape(summary.week)}주차</div>
+    <div class="hdr-title">호흡기 감염병 모니터링</div>
+    <div class="hdr-right">
+      <img class="hdr-logo" src="/logo.png" alt="CI">
+      <div class="hdr-info">
+        <strong>초이스 이비인후과 제공</strong>
+        {html.escape(report.published_date)} 기준
       </div>
     </div>
-  </section>
-</main>
+  </div>
+
+  <div class="main">
+
+    <!-- 인플루엔자 -->
+    <div class="sec s-flu">
+      <div class="sec-head"><span class="sec-icon">🌡</span><span class="sec-name">인플루엔자 의사환자분율</span></div>
+      <div class="sec-body">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:3px">
+          <div class="sec-val" style="margin:0">{html.escape(summary.influenza)}</div>
+          <div style="padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;background:{epidemic_bg};color:{epidemic_color};border:1px solid {epidemic_color}">{epidemic_label}</div>
+        </div>
+        <div class="sec-sub" style="color:{direction_color}">{direction_icon} {html.escape(summary.influenza_direction)} · 기준 {summary.epidemic_threshold}‰</div>
+        <div class="sec-chart">{flu_svg}</div>
+      </div>
+    </div>
+
+    <!-- 코로나19 -->
+    <div class="sec s-corona">
+      <div class="sec-head"><span class="sec-icon">🦠</span><span class="sec-name">코로나19 입원환자</span></div>
+      <div class="sec-body">
+        <div class="sec-val">{html.escape(summary.corona_cases)}</div>
+        <div class="sec-sub">{html.escape(summary.corona_delta)}</div>
+        <div class="sec-chart">{corona_svg}</div>
+      </div>
+    </div>
+
+    <!-- 장관감염증 -->
+    <div class="sec s-enteric">
+      <div class="sec-head"><span class="sec-icon">🧫</span><span class="sec-name">장관감염증</span></div>
+      <div class="sec-body">
+        <div class="sec-val" style="font-size:clamp(20px,2vw,30px)">{html.escape(summary.enteric_cases)}</div>
+        <div class="sec-sub">{html.escape(summary.enteric_delta)}</div>
+        <div class="sec-chart">
+          {enteric_trend_svg if enteric_trend_svg else "<div style='opacity:.45;font-size:11px;padding-top:6px'>데이터 누적 중 — 매주 자동 갱신</div>"}
+        </div>
+      </div>
+    </div>
+
+    <!-- 바이러스 분포 + 기타호흡기감염증 5주 추이 (하단 전체) -->
+    <div class="sec s-virus span3">
+      <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;min-height:0;padding:0 16px 10px;align-items:center;gap:20px">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div style="font-size:11px;font-weight:700;color:#64748b;align-self:flex-start;margin-bottom:8px">🔬 주요 바이러스 분포</div>
+          <div style="display:flex;align-items:center;gap:18px">
+            <svg viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg" style="width:260px;height:260px;flex-shrink:0">
+              {donut_paths}
+              <circle cx="80" cy="80" r="38" fill="#0d1117"/>
+              <text x="80" y="75" text-anchor="middle" fill="#f1f5f9" font-size="11" font-weight="800">{html.escape(top_virus[0])}</text>
+              <text x="80" y="90" text-anchor="middle" fill="#94a3b8" font-size="9">{html.escape(top_virus[1])}</text>
+            </svg>
+            <div style="font-size:12px;line-height:1.9">{legend_html}</div>
+          </div>
+        </div>
+        <div style="padding-left:16px;border-left:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column">
+          <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:8px">📊 기타호흡기감염증 최근 5주 추이</div>
+          <div style="flex:1">{ari_svg}</div>
+        </div>
+      </div>
+    </div>
+
+
+  </div>
+
+  <div class="footer">
+    <div class="footer-src">질병관리청 감염병포털 기반 자동 요약 &nbsp;·&nbsp;<a href="{html.escape(report.url)}" target="_blank" rel="noreferrer">원문 보기 →</a></div>
+    <div class="footer-players">The players forever!!!</div>
+  </div>
+</div>
 </body>
 </html>"""
 
@@ -374,6 +327,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path.startswith("/logo.png"):
             self.send_bytes((BASE_DIR / "choice_ent_logo.png").read_bytes(), "image/png")
+            return
+        if self.path.startswith("/fonts/laundry-bold.woff"):
+            self.send_bytes((BASE_DIR / "LaundryGothic_TTF" / "webfont" / "런드리고딕 Bold.woff").read_bytes(), "font/woff")
+            return
+        if self.path.startswith("/fonts/laundry-regular.woff"):
+            self.send_bytes((BASE_DIR / "LaundryGothic_TTF" / "webfont" / "런드리고딕 Regular.woff").read_bytes(), "font/woff")
             return
         if self.path.startswith("/latest_report.png"):
             try:
