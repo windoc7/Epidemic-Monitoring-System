@@ -15,6 +15,7 @@ import ssl
 import sys
 import urllib.parse
 import urllib.request
+from urllib.error import HTTPError
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -68,8 +69,12 @@ def post_form(url: str, payload: dict[str, str], *, verify_ssl: bool) -> dict:
         headers={"Content-Type": "application/x-www-form-urlencoded;charset=utf-8"},
     )
     context = None if verify_ssl else ssl._create_unverified_context()
-    with urllib.request.urlopen(request, timeout=30, context=context) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=30, context=context) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Kakao token request failed: HTTP {error.code} {body}") from error
 
 
 def main() -> int:
@@ -84,7 +89,15 @@ def main() -> int:
         print("ERROR: REST API key is required.", file=sys.stderr)
         return 1
 
+    client_secret = config.get("kakao_client_secret")
+    if not client_secret:
+        client_secret = input("Kakao Client Secret (press Enter if disabled): ").strip()
+
     config["kakao_rest_api_key"] = rest_api_key
+    if client_secret:
+        config["kakao_client_secret"] = client_secret
+    else:
+        config.pop("kakao_client_secret", None)
     config.setdefault("verify_ssl", False)
     save_config(config_path, config)
 
