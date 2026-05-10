@@ -479,81 +479,29 @@ def refresh_kakao_token(config: dict[str, Any], config_path: Path) -> str:
 
 
 def send_kakao_message(access_token: str, report: Report, summary: ReportSummary, config: dict[str, Any], *, verify_ssl: bool) -> None:
-    report_page_url = config.get("report_page_url") or os.environ.get("REPORT_PAGE_URL")
+    page_url = config.get("report_page_url") or os.environ.get("REPORT_PAGE_URL") or report.url
     image_url = config.get("report_image_url") or os.environ.get("REPORT_IMAGE_URL")
-    if report_page_url:
-        viruses = "\n".join(f"- {name}: {value}" for name, value in summary.key_viruses[:4])
-        message = (
-            f"초이스 이비인후과 호흡기 감염병 리포트 {summary.week}주차\n\n"
-            f"인플루엔자: {summary.influenza} ({summary.influenza_direction})\n"
-            f"기타호흡기감염증: {summary.ari_cases}\n"
-            f"전주 대비: {summary.ari_delta}\n\n"
-            f"주요 바이러스\n{viruses}\n\n"
-            f"리포트 보기\n{report_page_url}"
-        )
-        template_object = {
-            "object_type": "text",
-            "text": message[:1000],
-            "link": {
-                "web_url": report_page_url,
-                "mobile_web_url": report_page_url,
-            },
-            "button_title": "리포트 보기",
-        }
-        response = request_text(
-            "https://kapi.kakao.com/v2/api/talk/memo/default/send",
-            data={"template_object": json.dumps(template_object, ensure_ascii=False)},
-            token=access_token,
-            verify_ssl=verify_ssl,
-        )
-        result = json.loads(response)
-        if result.get("result_code") != 0:
-            raise RuntimeError(f"카카오톡 메시지 전송 실패: {response}")
-        return
 
-    if not image_url:
-        image_url = report.url
-
+    viruses = "\n".join(f"- {name}: {value}" for name, value in summary.key_viruses[:4])
     description = (
-        f"인플루엔자 {summary.influenza} · 기타호흡기 {summary.ari_cases} "
-        f"· 주요 바이러스 {', '.join(f'{name} {value}' for name, value in summary.key_viruses[:3])}"
-    )
+        f"인플루엔자: {summary.influenza} ({summary.influenza_direction})\n"
+        f"기타호흡기감염증: {summary.ari_cases}\n"
+        f"전주 대비: {summary.ari_delta}\n\n"
+        f"주요 바이러스\n{viruses}"
+    )[:180]
+
+    content: dict[str, Any] = {
+        "title": f"초이스 이비인후과 호흡기 감염병 리포트 {summary.week}주차",
+        "description": description,
+        "link": {"web_url": page_url, "mobile_web_url": page_url},
+    }
+    if image_url:
+        content.update({"image_url": image_url, "image_width": 1080, "image_height": 1500})
+
     template_object = {
         "object_type": "feed",
-        "content": {
-            "title": f"감염병 주간 리포트 {summary.week}주차",
-            "description": description[:180],
-            "image_url": image_url,
-            "image_width": 1080,
-            "image_height": 1500,
-            "link": {
-                "web_url": report.url,
-                "mobile_web_url": report.url,
-            },
-        },
-        "item_content": {
-            "profile_text": "KDCA Monitor",
-            "items": [
-                {"item": "인플루엔자", "item_op": summary.influenza},
-                {"item": "기타호흡기", "item_op": summary.ari_cases},
-                {"item": "전주 대비", "item_op": summary.ari_delta},
-                *[
-                    {"item": name, "item_op": value}
-                    for name, value in summary.key_viruses[:2]
-                ],
-            ],
-            "sum": "원문",
-            "sum_op": "확인",
-        },
-        "buttons": [
-            {
-                "title": "원문 보기",
-                "link": {
-                    "web_url": report.url,
-                    "mobile_web_url": report.url,
-                },
-            }
-        ],
+        "content": content,
+        "buttons": [{"title": "리포트 보기", "link": {"web_url": page_url, "mobile_web_url": page_url}}],
     }
 
     response = request_text(
