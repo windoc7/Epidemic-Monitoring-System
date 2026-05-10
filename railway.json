@@ -1,6 +1,6 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "startCommand": "python kdca_kakao_report.py"
+    "startCommand": "python server.py"
   }
 }
