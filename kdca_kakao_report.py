@@ -463,6 +463,36 @@ def refresh_kakao_token(config: dict[str, Any], config_path: Path) -> str:
 
 def send_kakao_message(access_token: str, report: Report, summary: ReportSummary, config: dict[str, Any], *, verify_ssl: bool) -> None:
     image_url = config.get("report_image_url") or os.environ.get("REPORT_IMAGE_URL")
+    if not image_url:
+        viruses = "\n".join(f"- {name}: {value}" for name, value in summary.key_viruses[:4])
+        message = (
+            f"호흡기 감염병 모니터링 {summary.week}주차\n\n"
+            f"인플루엔자: {summary.influenza} ({summary.influenza_direction})\n"
+            f"기타호흡기감염증: {summary.ari_cases}\n"
+            f"전주 대비: {summary.ari_delta}\n\n"
+            f"주요 바이러스\n{viruses}\n\n"
+            f"원문 링크\n{report.url}"
+        )
+        template_object = {
+            "object_type": "text",
+            "text": message[:1000],
+            "link": {
+                "web_url": report.url,
+                "mobile_web_url": report.url,
+            },
+            "button_title": "원문 보기",
+        }
+        response = request_text(
+            "https://kapi.kakao.com/v2/api/talk/memo/default/send",
+            data={"template_object": json.dumps(template_object, ensure_ascii=False)},
+            token=access_token,
+            verify_ssl=verify_ssl,
+        )
+        result = json.loads(response)
+        if result.get("result_code") != 0:
+            raise RuntimeError(f"카카오톡 메시지 전송 실패: {response}")
+        return
+
     description = (
         f"인플루엔자 {summary.influenza} · 기타호흡기 {summary.ari_cases} "
         f"· 주요 바이러스 {', '.join(f'{name} {value}' for name, value in summary.key_viruses[:3])}"
@@ -472,6 +502,9 @@ def send_kakao_message(access_token: str, report: Report, summary: ReportSummary
         "content": {
             "title": f"감염병 주간 리포트 {summary.week}주차",
             "description": description[:180],
+            "image_url": image_url,
+            "image_width": 1080,
+            "image_height": 1500,
             "link": {
                 "web_url": report.url,
                 "mobile_web_url": report.url,
@@ -491,11 +524,16 @@ def send_kakao_message(access_token: str, report: Report, summary: ReportSummary
             "sum": "원문",
             "sum_op": "확인",
         },
+        "buttons": [
+            {
+                "title": "원문 보기",
+                "link": {
+                    "web_url": report.url,
+                    "mobile_web_url": report.url,
+                },
+            }
+        ],
     }
-    if image_url:
-        template_object["content"]["image_url"] = image_url
-        template_object["content"]["image_width"] = 1080
-        template_object["content"]["image_height"] = 1500
 
     response = request_text(
         "https://kapi.kakao.com/v2/api/talk/memo/default/send",
