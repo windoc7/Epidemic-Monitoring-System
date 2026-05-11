@@ -39,9 +39,13 @@ def _load_history(key: str) -> list[tuple[str, float]]:
         if not history:
             return []
         weeks = sorted(history.keys(), key=lambda w: int(w) if w.isdigit() else 0)
-        return [(f"{w}주", history[w][key]) for w in weeks if history[w].get(key)]
+        return [(f"{w}주", history[w][key]) for w in weeks if key in history[w]]
     except Exception:
         return []
+
+
+def load_flu_history() -> list[tuple[str, float]]:
+    return _load_history("influenza")
 
 
 def load_ari_history() -> list[tuple[str, float]]:
@@ -251,13 +255,14 @@ def donut_svg(viruses: list) -> tuple[str, str]:
 
 def render_html() -> str:
     report, summary = load_report()
-    flu_svg = line_chart_svg(summary.influenza_trend, "#fb923c", "ag")
+    flu_history = load_flu_history()
+    flu_svg = line_chart_svg((flu_history or summary.influenza_trend)[-5:], "#fb923c", "ag")
     ari_history = load_ari_history()
-    ari_svg = line_chart_svg(ari_history or summary.ari_trend, "#a78bfa", "bg")
+    ari_svg = line_chart_svg((ari_history or summary.ari_trend)[-5:], "#a78bfa", "bg")
     enteric_history = load_enteric_history()
-    enteric_trend_svg = line_chart_svg(enteric_history, "#34d399", "eg") if enteric_history else ""
+    enteric_trend_svg = line_chart_svg(enteric_history[-5:], "#34d399", "eg") if enteric_history else ""
     corona_history = load_corona_history()
-    corona_svg = line_chart_svg(corona_history, "#22d3ee", "cg")
+    corona_svg = line_chart_svg(corona_history[-5:], "#22d3ee", "cg")
     corona_confirmed = next((v for n, v in summary.key_viruses if n == "코로나"), summary.corona_cases)
     donut_paths, legend_html = donut_svg(summary.key_viruses)
     enteric_donut, enteric_legend = donut_svg(summary.enteric_viruses)
@@ -269,8 +274,6 @@ def render_html() -> str:
     epidemic_label = "유행중" if is_epidemic else "유행 아님"
     epidemic_color = "#ef4444" if is_epidemic else "#10b981"
     epidemic_bg = "rgba(239,68,68,.2)" if is_epidemic else "rgba(16,185,129,.15)"
-
-    flu5_svg = line_chart_svg(summary.influenza_trend[-5:], "#fb923c", "fg")
 
     return f"""<!doctype html>
 <html lang="ko">
@@ -293,8 +296,9 @@ def render_html() -> str:
     .hdr-title{{font-family:"LaundryGothic",sans-serif;font-size:28px;font-weight:700;letter-spacing:3px;background:linear-gradient(90deg,#e2e8f0 0%,#ffffff 40%,#94a3b8 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;flex:1}}
     .hdr-right{{display:flex;align-items:center;gap:8px}}
     .hdr-logo{{width:36px;height:36px;object-fit:contain;border-radius:8px;background:rgba(255,255,255,.05);padding:3px}}
-    .hdr-info{{text-align:right;color:#475569;font-size:11px;line-height:1.6}}
-    .hdr-info strong{{color:#64748b;font-size:12px;font-weight:700;display:block}}
+    .hdr-week-date{{font-size:14px;font-weight:600;opacity:.7}}
+    .hdr-info{{text-align:right}}
+    .hdr-info strong{{color:#e2e8f0;font-size:20px;font-weight:800;display:block}}
 
     /* main grid */
     .main{{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;flex:1;min-height:0}}
@@ -339,13 +343,12 @@ def render_html() -> str:
 <div class="wrap">
 
   <div class="hdr">
-    <div class="hdr-week">📅 {html.escape(summary.week)}주차</div>
+    <div class="hdr-week">📅 {html.escape(summary.week)}주차 <span class="hdr-week-date">· {html.escape(report.published_date)} 기준</span></div>
     <div class="hdr-title">호흡기 감염병 모니터링</div>
     <div class="hdr-right">
       <img class="hdr-logo" src="/logo.png" alt="CI">
       <div class="hdr-info">
         <strong>초이스 이비인후과 제공</strong>
-        {html.escape(report.published_date)} 기준
       </div>
     </div>
   </div>
