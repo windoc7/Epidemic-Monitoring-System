@@ -337,6 +337,26 @@ def render_html() -> str:
     .footer-src{{font-size:11px;color:#334155}}
     .footer-src a{{color:#475569;font-weight:700;text-decoration:none}}
     .footer-players{{font-size:15px;font-weight:900;background:linear-gradient(90deg,#f97316,#f59e0b,#84cc16,#22d3ee,#818cf8,#e879f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}}
+
+    /* ── 모바일 반응형 ── */
+    @media (max-width:768px){{
+      body{{height:auto;overflow-y:auto}}
+      .wrap{{height:auto;padding:12px 14px 20px;gap:10px}}
+      .main{{grid-template-columns:1fr;grid-template-rows:auto;flex:none}}
+      .span3{{grid-column:1}}
+      .sec{{min-height:220px}}
+      .sec-chart{{min-height:110px}}
+      .hdr{{flex-wrap:wrap;gap:8px}}
+      .hdr-title{{font-size:20px;letter-spacing:1px}}
+      .hdr-week{{font-size:17px;padding:3px 10px}}
+      .hdr-week-date{{font-size:12px}}
+      .hdr-info strong{{font-size:16px}}
+      .hdr-logo{{width:28px;height:28px}}
+      .bottom-panel{{grid-template-columns:1fr !important;height:auto !important}}
+      .ari-panel{{border-left:none !important;border-top:1px solid rgba(255,255,255,.06);padding-left:0 !important;padding-top:14px}}
+      .donut-svg{{width:180px !important;height:180px !important}}
+      .footer{{flex-direction:column;gap:3px;align-items:flex-start}}
+    }}
   </style>
 </head>
 <body>
@@ -373,7 +393,7 @@ def render_html() -> str:
       <div class="sec-head"><span class="sec-icon">🦠</span><span class="sec-name">코로나바이러스 확진</span></div>
       <div class="sec-body">
         <div class="sec-val">{html.escape(corona_confirmed)}</div>
-        <div class="sec-sub">기타호흡기감염증 중</div>
+        <div class="sec-sub">코로나19 입원환자</div>
         <div class="sec-chart">{corona_svg}</div>
       </div>
     </div>
@@ -390,13 +410,13 @@ def render_html() -> str:
       </div>
     </div>
 
-    <!-- 바이러스 분포 + 기타호흡기감염증 5주 추이 (하단 전체) -->
+    <!-- 바이러스 분포 + 급성호흡기감염증 입원감시 5주 추이 (하단 전체) -->
     <div class="sec s-virus span3">
-      <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;min-height:0;padding:0 16px 10px;align-items:center;gap:20px">
+      <div class="bottom-panel" style="display:grid;grid-template-columns:1fr 1fr;flex:1;min-height:0;padding:0 16px 10px;align-items:center;gap:20px">
         <div style="display:flex;flex-direction:column;align-items:center">
           <div style="font-size:11px;font-weight:700;color:#64748b;align-self:flex-start;margin-bottom:8px">🔬 주요 바이러스 분포</div>
           <div style="display:flex;align-items:center;gap:18px">
-            <svg viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg" style="width:260px;height:260px;flex-shrink:0">
+            <svg class="donut-svg" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg" style="width:260px;height:260px;flex-shrink:0">
               {donut_paths}
               <circle cx="80" cy="80" r="38" fill="#0d1117"/>
               <text x="80" y="75" text-anchor="middle" fill="#f1f5f9" font-size="11" font-weight="800">{html.escape(top_virus[0])}</text>
@@ -405,8 +425,8 @@ def render_html() -> str:
             <div style="font-size:12px;line-height:1.9">{legend_html}</div>
           </div>
         </div>
-        <div style="padding-left:16px;border-left:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column">
-          <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:8px">📊 기타호흡기감염증 최근 5주 추이</div>
+        <div class="ari-panel" style="padding-left:16px;border-left:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column">
+          <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:8px">📊 급성호흡기감염증 입원감시 최근 5주 추이</div>
           <div style="flex:1">{ari_svg}</div>
         </div>
       </div>

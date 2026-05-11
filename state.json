@@ -2,7 +2,7 @@
   "last_sent_doc_no": "20260507162551618",
   "last_sent_title": "2026년 감염병 표본감시 주간소식지 18주차",
   "last_sent_url": "https://dportal.kdca.go.kr/pot/bbs/BD_selectBbs.do?q_bbsDocNo=20260507162551618&q_bbsSn=1010&q_clsfNo=2",
-  "last_sent_at": "2026-05-10T21:56:42",
+  "last_sent_at": "2026-05-11T23:54:26",
   "weekly_history": {
     "14": {
       "influenza": 14.5,
@@ -30,8 +30,8 @@
     },
     "18": {
       "influenza": 8.1,
-      "ari": 1382,
-      "corona": 161,
+      "ari": 1442,
+      "corona": 40,
       "enteric": 533
     }
   }
