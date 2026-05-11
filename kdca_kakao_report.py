@@ -331,7 +331,7 @@ def extract_report_summary(report: Report, text: str) -> ReportSummary:
         if value != "-" and label not in seen_labels:
             key_viruses.append((label, f"{value}%"))
             seen_labels.add(label)
-    key_viruses = key_viruses[:7]
+    key_viruses = sorted(key_viruses, key=lambda x: float(re.sub(r"[^0-9.]", "", x[1]) or "0"), reverse=True)[:7]
 
     # ARI 추이 - 급성호흡기감염증 섹션에서 추출
     ari_trend = extract_section_trend(ari_section)
