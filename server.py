@@ -13,6 +13,8 @@ from flask import Flask, Response
 
 from kdca_kakao_report import (
     KDCA_LIST_URL,
+    Report,
+    ReportSummary,
     article_text,
     extract_report_summary,
     find_latest_report,
@@ -56,15 +58,70 @@ def verify_ssl() -> bool:
 
 
 def load_report() -> tuple[object, object]:
-    ssl = verify_ssl()
-    report = find_latest_report(request_text(KDCA_LIST_URL, verify_ssl=ssl))
-    if _cache.get("doc_no") != report.doc_no:
-        summary = extract_report_summary(report, article_text(report, verify_ssl=ssl))
-        render_summary_image(report, summary, IMAGE_PATH)
-        _cache["doc_no"] = report.doc_no
-        _cache["report"] = report
-        _cache["summary"] = summary
-    return _cache["report"], _cache["summary"]
+    try:
+        ssl = verify_ssl()
+        report = find_latest_report(request_text(KDCA_LIST_URL, verify_ssl=ssl))
+        if _cache.get("doc_no") != report.doc_no:
+            summary = extract_report_summary(report, article_text(report, verify_ssl=ssl))
+            render_summary_image(report, summary, IMAGE_PATH)
+            _cache["doc_no"] = report.doc_no
+            _cache["report"] = report
+            _cache["summary"] = summary
+        return _cache["report"], _cache["summary"]
+    except Exception as exc:
+        print(f"KDCA fetch failed, using cached state: {exc}", flush=True)
+        if _cache.get("report") and _cache.get("summary"):
+            return _cache["report"], _cache["summary"]
+        return load_cached_report()
+
+
+def load_cached_report() -> tuple[Report, ReportSummary]:
+    import json
+
+    with STATE_PATH.open(encoding="utf-8") as f:
+        state = json.load(f)
+
+    history = state.get("weekly_history", {})
+    weeks = sorted((w for w in history if w.isdigit()), key=int)
+    latest_week = weeks[-1] if weeks else "?"
+    latest = history.get(latest_week, {})
+    previous = history.get(weeks[-2], {}) if len(weeks) > 1 else {}
+
+    def trend(key: str) -> list[tuple[str, float]]:
+        return [(f"{week}주", float(history[week].get(key, 0))) for week in weeks if key in history[week]]
+
+    influenza_value = float(latest.get("influenza", 0))
+    previous_flu = float(previous.get("influenza", influenza_value))
+    direction = "증가" if influenza_value > previous_flu else "감소" if influenza_value < previous_flu else "변동 없음"
+
+    report = Report(
+        doc_no=str(state.get("last_sent_doc_no", "cached")),
+        title=str(state.get("last_sent_title", "감염병 표본감시 주간소식지")),
+        department="질병관리청",
+        published_date=str(state.get("last_sent_at", "")).split("T")[0],
+        url=str(state.get("last_sent_url", KDCA_LIST_URL)),
+    )
+    summary = ReportSummary(
+        week=latest_week,
+        influenza=f"{influenza_value:g}‰",
+        influenza_direction=direction,
+        influenza_trend=trend("influenza"),
+        ari_cases=f"{int(float(latest.get('ari', 0))):,}명",
+        ari_delta="KDCA 실시간 연결 실패 - 저장된 수치 표시",
+        key_viruses=[],
+        ari_trend=trend("ari"),
+        epidemic_threshold=8.6,
+        corona_cases=f"{int(float(latest.get('corona', 0))):,}명",
+        corona_delta="저장된 수치",
+        corona_trend=trend("corona"),
+        enteric_cases=f"{int(float(latest.get('enteric', 0))):,}명",
+        enteric_delta="저장된 수치",
+        enteric_viruses=[],
+    )
+    _cache["doc_no"] = report.doc_no
+    _cache["report"] = report
+    _cache["summary"] = summary
+    return report, summary
 
 
 def num(value: str) -> float:
@@ -346,6 +403,9 @@ def latest_report_image() -> Response:
         load_report()
         return send_bytes(IMAGE_PATH.read_bytes(), "image/png")
     except Exception as exc:
+        if IMAGE_PATH.exists():
+            print(f"image refresh failed, serving cached image: {exc}", flush=True)
+            return send_bytes(IMAGE_PATH.read_bytes(), "image/png")
         print(f"image error: {exc}", flush=True)
         return send_bytes(f"image error: {exc}\n".encode("utf-8"), "text/plain; charset=utf-8", status=503)
 
