@@ -7,31 +7,27 @@
     "14": {
       "influenza": 14.5,
       "ari": 1419,
-      "corona": 0,
       "enteric": 0
     },
     "15": {
       "influenza": 10.8,
       "ari": 1365,
-      "corona": 55,
       "enteric": 0
     },
     "16": {
       "influenza": 10.1,
       "ari": 1457,
-      "corona": 63,
       "enteric": 0
     },
     "17": {
       "influenza": 6.9,
       "ari": 1480,
-      "corona": 56,
       "enteric": 0
     },
     "18": {
       "influenza": 8.1,
       "ari": 1442,
-      "corona": 40,
+      "corona": 10.1,
       "enteric": 533
     }
   }

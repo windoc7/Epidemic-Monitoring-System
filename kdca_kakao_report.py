@@ -665,10 +665,15 @@ def run(config_path: Path, *, dry_run: bool, force: bool) -> int:
             ari_num = int(re.sub(r"[^0-9]", "", summary.ari_cases) or "0")
         except (ValueError, AttributeError):
             ari_num = 0
-        try:
-            corona_num = int(re.sub(r"[^0-9]", "", summary.corona_cases) or "0")
-        except (ValueError, AttributeError):
-            corona_num = 0
+        # 코로나바이러스 비율(%) — 기타호흡기감염증 내 비율
+        corona_num = 0.0
+        for vname, vval in summary.key_viruses:
+            if vname == "코로나":
+                try:
+                    corona_num = float(re.sub(r"[^0-9.]", "", vval) or "0")
+                except ValueError:
+                    pass
+                break
         try:
             enteric_num = int(re.sub(r"[^0-9]", "", summary.enteric_cases) or "0")
         except (ValueError, AttributeError):

@@ -33,8 +33,8 @@
       ["18주", 1442.0]
     ],
     "epidemic_threshold": 8.6,
-    "corona_cases": "40명",
-    "corona_delta": "감소",
+    "corona_cases": "10.1%",
+    "corona_delta": "기타호흡기감염증 중",
     "corona_trend": [],
     "enteric_cases": "533명",
     "enteric_delta": "41명 감소",
