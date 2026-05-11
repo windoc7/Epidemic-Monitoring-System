@@ -606,9 +606,10 @@ def send_kakao_message(access_token: str, report: Report, summary: ReportSummary
     viruses = " | ".join(f"{name} {value}" for name, value in summary.key_viruses[:4])
     text = (
         f"[초이스 이비인후과] 호흡기 감염병 리포트 {summary.week}주차\n\n"
-        f"인플루엔자: {summary.influenza} ({summary.influenza_direction})\n"
-        f"기타호흡기감염증: {summary.ari_cases} ({summary.ari_delta})\n"
-        f"주요 바이러스: {viruses}\n\n"
+        f"인플루엔자 의사환자분율: {summary.influenza} ({summary.influenza_direction})\n"
+        f"기타호흡기감염증 입원환자수: {summary.ari_cases} ({summary.ari_delta})\n"
+        f"주요 바이러스 비율: {viruses}\n\n"
+        f"자세한 내용은 아래 링크를 확인해 주세요 👇\n"
         f"{page_url}"
     )
 
