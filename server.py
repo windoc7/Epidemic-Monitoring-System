@@ -263,7 +263,6 @@ def render_html() -> str:
     enteric_trend_svg = line_chart_svg(enteric_history[-5:], "#34d399", "eg") if enteric_history else ""
     corona_history = load_corona_history()
     corona_svg = line_chart_svg(corona_history[-5:], "#22d3ee", "cg")
-    corona_confirmed = next((v for n, v in summary.key_viruses if n == "코로나"), summary.corona_cases)
     donut_paths, legend_html = donut_svg(summary.key_viruses)
     enteric_donut, enteric_legend = donut_svg(summary.enteric_viruses)
     top_virus = summary.key_viruses[0] if summary.key_viruses else ("—", "—")
@@ -388,12 +387,12 @@ def render_html() -> str:
       </div>
     </div>
 
-    <!-- 코로나바이러스 -->
+    <!-- 코로나19 -->
     <div class="sec s-corona">
-      <div class="sec-head"><span class="sec-icon">🦠</span><span class="sec-name">코로나바이러스 확진</span></div>
+      <div class="sec-head"><span class="sec-icon">🦠</span><span class="sec-name">코로나19 입원환자</span></div>
       <div class="sec-body">
-        <div class="sec-val">{html.escape(corona_confirmed)}</div>
-        <div class="sec-sub">코로나19 입원환자</div>
+        <div class="sec-val">{html.escape(summary.corona_cases)}</div>
+        <div class="sec-sub">{html.escape(summary.corona_delta)}</div>
         <div class="sec-chart">{corona_svg}</div>
       </div>
     </div>
