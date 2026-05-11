@@ -78,8 +78,24 @@ def load_report() -> tuple[object, object]:
 def load_cached_report() -> tuple[Report, ReportSummary]:
     import json
 
-    with STATE_PATH.open(encoding="utf-8") as f:
-        state = json.load(f)
+    if STATE_PATH.exists():
+        with STATE_PATH.open(encoding="utf-8") as f:
+            state = json.load(f)
+    else:
+        state = {
+            "last_sent_doc_no": "cached",
+            "last_sent_title": "감염병 표본감시 주간소식지",
+            "last_sent_url": KDCA_LIST_URL,
+            "last_sent_at": "",
+            "weekly_history": {
+                "18": {
+                    "influenza": 8.1,
+                    "ari": 1382,
+                    "corona": 40,
+                    "enteric": 533,
+                }
+            },
+        }
 
     history = state.get("weekly_history", {})
     weeks = sorted((w for w in history if w.isdigit()), key=int)
@@ -121,6 +137,11 @@ def load_cached_report() -> tuple[Report, ReportSummary]:
     _cache["doc_no"] = report.doc_no
     _cache["report"] = report
     _cache["summary"] = summary
+    if not IMAGE_PATH.exists():
+        try:
+            render_summary_image(report, summary, IMAGE_PATH)
+        except Exception as exc:
+            print(f"cached image render failed: {exc}", flush=True)
     return report, summary
 
 
