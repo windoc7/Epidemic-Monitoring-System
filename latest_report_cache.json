@@ -1,0 +1,46 @@
+{
+  "report": {
+    "doc_no": "20260507162551618",
+    "title": "2026년 감염병 표본감시 주간소식지 18주차",
+    "department": "감염병관리과",
+    "published_date": "2026.05.07",
+    "url": "https://dportal.kdca.go.kr/pot/bbs/BD_selectBbs.do?q_bbsDocNo=20260507162551618&q_bbsSn=1010&q_clsfNo=2"
+  },
+  "summary": {
+    "week": "18",
+    "influenza": "8.1‰",
+    "influenza_direction": "증가",
+    "influenza_trend": [
+      ["15주", 10.8],
+      ["16주", 10.1],
+      ["17주", 6.9],
+      ["18주", 8.1]
+    ],
+    "ari_cases": "1,442명",
+    "ari_delta": "152명 감소",
+    "key_viruses": [
+      ["리노", "31.7%"],
+      ["메타뉴모", "19.8%"],
+      ["파라인플루", "8.5%"],
+      ["코로나", "10.1%"]
+    ],
+    "ari_trend": [
+      ["15주", 1365.0],
+      ["16주", 1457.0],
+      ["17주", 1480.0],
+      ["18주", 1442.0]
+    ],
+    "epidemic_threshold": 8.6,
+    "corona_cases": "40명",
+    "corona_delta": "-",
+    "corona_trend": [
+      ["15주", 55.0],
+      ["16주", 63.0],
+      ["17주", 56.0],
+      ["18주", 40.0]
+    ],
+    "enteric_cases": "533명",
+    "enteric_delta": "41명 감소",
+    "enteric_viruses": []
+  }
+}

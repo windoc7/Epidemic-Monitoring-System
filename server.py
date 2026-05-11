@@ -25,6 +25,7 @@ from kdca_kakao_report import (
 BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "latest_report.png"
 STATE_PATH = BASE_DIR / "state.json"
+CACHE_PATH = BASE_DIR / "latest_report_cache.json"
 _cache: dict = {}
 app = Flask(__name__)
 
@@ -77,6 +78,28 @@ def load_report() -> tuple[object, object]:
 
 def load_cached_report() -> tuple[Report, ReportSummary]:
     import json
+
+    if CACHE_PATH.exists():
+        with CACHE_PATH.open(encoding="utf-8") as f:
+            payload = json.load(f)
+        report = Report(**payload["report"])
+        summary = ReportSummary(
+            **{
+                key: [tuple(item) for item in value]
+                if key.endswith("_trend") or key in {"key_viruses", "enteric_viruses"}
+                else value
+                for key, value in payload["summary"].items()
+            }
+        )
+        _cache["doc_no"] = report.doc_no
+        _cache["report"] = report
+        _cache["summary"] = summary
+        if not IMAGE_PATH.exists():
+            try:
+                render_summary_image(report, summary, IMAGE_PATH)
+            except Exception as exc:
+                print(f"cached image render failed: {exc}", flush=True)
+        return report, summary
 
     if STATE_PATH.exists():
         with STATE_PATH.open(encoding="utf-8") as f:
