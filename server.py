@@ -7,9 +7,9 @@ import html
 import math
 import os
 import re
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+from flask import Flask, Response
 
 from kdca_kakao_report import (
     KDCA_LIST_URL,
@@ -24,6 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent
 IMAGE_PATH = BASE_DIR / "latest_report.png"
 STATE_PATH = BASE_DIR / "state.json"
 _cache: dict = {}
+app = Flask(__name__)
 
 
 def _load_history(key: str) -> list[tuple[str, float]]:
@@ -313,61 +314,55 @@ def render_html() -> str:
 </html>"""
 
 
-class Handler(BaseHTTPRequestHandler):
-    def send_bytes(self, body: bytes, content_type: str) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_GET(self) -> None:
-        if self.path.startswith("/health"):
-            self.send_bytes(b"ok\n", "text/plain; charset=utf-8")
-            return
-        if self.path.startswith("/logo.png"):
-            self.send_bytes((BASE_DIR / "choice_ent_logo.png").read_bytes(), "image/png")
-            return
-        if self.path.startswith("/fonts/laundry-bold.woff"):
-            self.send_bytes((BASE_DIR / "LaundryGothic_TTF" / "webfont" / "런드리고딕 Bold.woff").read_bytes(), "font/woff")
-            return
-        if self.path.startswith("/fonts/laundry-regular.woff"):
-            self.send_bytes((BASE_DIR / "LaundryGothic_TTF" / "webfont" / "런드리고딕 Regular.woff").read_bytes(), "font/woff")
-            return
-        if self.path.startswith("/latest_report.png"):
-            try:
-                load_report()
-                self.send_bytes(IMAGE_PATH.read_bytes(), "image/png")
-            except Exception as exc:
-                print(f"image error: {exc}")
-                self.send_response(503)
-                self.end_headers()
-            return
-        try:
-            self.send_bytes(render_html().encode("utf-8"), "text/html; charset=utf-8")
-        except Exception as exc:
-            print(f"render error: {exc}")
-            self.send_bytes(f"<pre>오류: {exc}</pre>".encode("utf-8"), "text/html; charset=utf-8")
-
-    def log_message(self, fmt: str, *args: object) -> None:
-        print(fmt % args)
+def send_bytes(body: bytes, content_type: str, status: int = 200) -> Response:
+    return Response(body, status=status, content_type=content_type, headers={"Cache-Control": "no-store"})
 
 
-def _safe_preload() -> None:
+@app.get("/health")
+def health() -> Response:
+    return send_bytes(b"ok\n", "text/plain; charset=utf-8")
+
+
+@app.get("/logo.png")
+def logo() -> Response:
+    return send_bytes((BASE_DIR / "choice_ent_logo.png").read_bytes(), "image/png")
+
+
+@app.get("/fonts/laundry-bold.woff")
+def laundry_bold() -> Response:
+    font_path = BASE_DIR / "LaundryGothic_TTF" / "webfont" / "런드리고딕 Bold.woff"
+    return send_bytes(font_path.read_bytes(), "font/woff")
+
+
+@app.get("/fonts/laundry-regular.woff")
+def laundry_regular() -> Response:
+    font_path = BASE_DIR / "LaundryGothic_TTF" / "webfont" / "런드리고딕 Regular.woff"
+    return send_bytes(font_path.read_bytes(), "font/woff")
+
+
+@app.get("/latest_report.png")
+def latest_report_image() -> Response:
     try:
         load_report()
-        print("Preload complete")
+        return send_bytes(IMAGE_PATH.read_bytes(), "image/png")
     except Exception as exc:
-        print(f"Preload failed (non-fatal): {exc}")
+        print(f"image error: {exc}", flush=True)
+        return send_bytes(f"image error: {exc}\n".encode("utf-8"), "text/plain; charset=utf-8", status=503)
+
+
+@app.get("/")
+def index() -> Response:
+    try:
+        return send_bytes(render_html().encode("utf-8"), "text/html; charset=utf-8")
+    except Exception as exc:
+        print(f"render error: {exc}", flush=True)
+        return send_bytes(f"<pre>오류: {exc}</pre>".encode("utf-8"), "text/html; charset=utf-8", status=500)
 
 
 def main() -> None:
     port = int(os.environ.get("PORT", "8000"))
-    print(f"Starting on port {port}")
-    threading.Thread(target=_safe_preload, daemon=True).start()
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"Ready on port {port}")
-    server.serve_forever()
+    print(f"Starting Flask development server on port {port}", flush=True)
+    app.run(host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
