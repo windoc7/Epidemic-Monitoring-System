@@ -48,6 +48,10 @@ def load_ari_history() -> list[tuple[str, float]]:
     return _load_history("ari")
 
 
+def load_corona_history() -> list[tuple[str, float]]:
+    return _load_history("corona")
+
+
 def load_enteric_history() -> list[tuple[str, float]]:
     return _load_history("enteric")
 
@@ -223,7 +227,7 @@ def donut_svg(viruses: list) -> tuple[str, str]:
     cx, cy, ro, ri = 80, 80, 70, 42
     paths, legend = [], []
     angle = -90.0
-    for i, (name, val) in enumerate(viruses[:6]):
+    for i, (name, val) in enumerate(viruses[:7]):
         pct = num(val) / total
         sweep = pct * 360
         if sweep < 0.5:
@@ -252,7 +256,9 @@ def render_html() -> str:
     ari_svg = line_chart_svg(ari_history or summary.ari_trend, "#a78bfa", "bg")
     enteric_history = load_enteric_history()
     enteric_trend_svg = line_chart_svg(enteric_history, "#34d399", "eg") if enteric_history else ""
-    corona_svg = line_chart_svg(summary.corona_trend, "#22d3ee", "cg")
+    corona_history = load_corona_history()
+    corona_svg = line_chart_svg(corona_history, "#22d3ee", "cg")
+    corona_confirmed = next((v for n, v in summary.key_viruses if n == "코로나"), summary.corona_cases)
     donut_paths, legend_html = donut_svg(summary.key_viruses)
     enteric_donut, enteric_legend = donut_svg(summary.enteric_viruses)
     top_virus = summary.key_viruses[0] if summary.key_viruses else ("—", "—")
@@ -359,12 +365,12 @@ def render_html() -> str:
       </div>
     </div>
 
-    <!-- 코로나19 -->
+    <!-- 코로나바이러스 -->
     <div class="sec s-corona">
-      <div class="sec-head"><span class="sec-icon">🦠</span><span class="sec-name">코로나19 입원환자</span></div>
+      <div class="sec-head"><span class="sec-icon">🦠</span><span class="sec-name">코로나바이러스 확진</span></div>
       <div class="sec-body">
-        <div class="sec-val">{html.escape(summary.corona_cases)}</div>
-        <div class="sec-sub">{html.escape(summary.corona_delta)}</div>
+        <div class="sec-val">{html.escape(corona_confirmed)}</div>
+        <div class="sec-sub">기타호흡기감염증 중</div>
         <div class="sec-chart">{corona_svg}</div>
       </div>
     </div>

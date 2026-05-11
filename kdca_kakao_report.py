@@ -266,8 +266,7 @@ def extract_weekly_trend(text: str, heading: str) -> list[tuple[str, float]]:
 
 
 def extract_section_trend(section_text: str) -> list[tuple[str, float]]:
-    """Extract (주) N명 trend from a text section."""
-    values = re.findall(r"\((\d+주)\)\s*(\d+(?:\.\d+)?)\s*명", section_text)
+    values = re.findall(r"\((\d+주)\)\s*(\d+(?:\.\d+)?)\s*(?:명|건)", section_text)
     return [(w, float(v)) for w, v in values[-12:]]
 
 
@@ -290,15 +289,15 @@ def extract_report_summary(report: Report, text: str) -> ReportSummary:
 
     ari_cases_raw = search_value(
         [
-            r"급성호흡기감염증[^.。]*?(\d{1,3}(?:,\d{3})*|\d+)\s*명",
             r"기타호흡기감염증[^.。]*?(\d{1,3}(?:,\d{3})*|\d+)\s*건",
+            r"급성호흡기감염증[^.。]*?(\d{1,3}(?:,\d{3})*|\d+)\s*건",
         ],
         text,
     )
     ari_previous = search_value(
         [
-            r"급성호흡기감염증[^.。]*?전주\((\d{1,3}(?:,\d{3})*|\d+)\s*명\)",
             r"기타호흡기감염증[^.。]*?전주\((\d{1,3}(?:,\d{3})*|\d+)\s*건\)",
+            r"급성호흡기감염증[^.。]*?전주\((\d{1,3}(?:,\d{3})*|\d+)\s*건\)",
         ],
         text,
     )
@@ -308,9 +307,9 @@ def extract_report_summary(report: Report, text: str) -> ReportSummary:
         previous = int(ari_previous.replace(",", ""))
         diff = current - previous
         if diff > 0:
-            ari_delta = f"{diff:,}명 증가"
+            ari_delta = f"{diff:,}건 증가"
         elif diff < 0:
-            ari_delta = f"{abs(diff):,}명 감소"
+            ari_delta = f"{abs(diff):,}건 감소"
         else:
             ari_delta = "변동 없음"
 
@@ -324,15 +323,21 @@ def extract_report_summary(report: Report, text: str) -> ReportSummary:
         ("사람코로나바이러스", "코로나"),
         ("아데노바이러스", "아데노"),
         ("호흡기세포융합바이러스", "RSV"),
+        ("보카바이러스", "보카"),
     ]
     key_viruses: list[tuple[str, str]] = []
     seen_labels: set[str] = set()
     for full_name, label in virus_aliases:
-        value = search_value([rf"{full_name}\s*(\d+(?:\.\d+)?)\s*%"], ari_section)
-        if value != "-" and label not in seen_labels:
-            key_viruses.append((label, f"{value}%"))
+        count = search_value([rf"{full_name}[^(\n.。]*?(\d{{1,3}}(?:,\d{{3}})*|\d+)\s*건"], ari_section)
+        if count != "-" and label not in seen_labels:
+            key_viruses.append((label, f"{count}건"))
             seen_labels.add(label)
-    key_viruses = key_viruses[:5]
+        else:
+            pct = search_value([rf"{full_name}\s*(\d+(?:\.\d+)?)\s*%"], ari_section)
+            if pct != "-" and label not in seen_labels:
+                key_viruses.append((label, f"{pct}%"))
+                seen_labels.add(label)
+    key_viruses = key_viruses[:7]
 
     # ARI 추이 - 급성호흡기감염증 섹션에서 추출
     ari_trend = extract_section_trend(ari_section)
@@ -663,15 +668,20 @@ def run(config_path: Path, *, dry_run: bool, force: bool) -> int:
     if not disable_state:
         history = state.get("weekly_history", {})
         try:
-            ari_num = int(summary.ari_cases.replace("명", "").replace(",", "").strip())
+            ari_num = int(re.sub(r"[^0-9]", "", summary.ari_cases) or "0")
         except (ValueError, AttributeError):
             ari_num = 0
+        # 코로나바이러스 확진 건수 (기타호흡기감염증 section) — not COVID-19 inpatient
+        corona_num = 0
+        for vname, vval in summary.key_viruses:
+            if vname == "코로나":
+                try:
+                    corona_num = int(re.sub(r"[^0-9]", "", vval) or "0")
+                except ValueError:
+                    pass
+                break
         try:
-            corona_num = int(summary.corona_cases.replace("명", "").replace(",", "").strip())
-        except (ValueError, AttributeError):
-            corona_num = 0
-        try:
-            enteric_num = int(summary.enteric_cases.replace("명", "").replace("건", "").replace(",", "").strip())
+            enteric_num = int(re.sub(r"[^0-9]", "", summary.enteric_cases) or "0")
         except (ValueError, AttributeError):
             enteric_num = 0
         history[summary.week] = {
