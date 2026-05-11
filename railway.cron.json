@@ -1,0 +1,10 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "cronSchedule": "30 23 * * 4",
+    "healthcheckPath": null,
+    "restartPolicyType": "NEVER",
+    "restartPolicyMaxRetries": null,
+    "startCommand": "python kdca_kakao_report.py"
+  }
+}
