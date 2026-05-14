@@ -467,8 +467,9 @@ def render_html() -> str:
       질병관리청 감염병포털 기반 자동 요약 &nbsp;·&nbsp;<a href="{html.escape(report.url)}" target="_blank" rel="noreferrer">원문 보기 →</a>
       &nbsp;·&nbsp;<a href="/history">📈 주간 추이 전체보기</a>
     </div>
-    <div style="font-size:11px;color:#475569;text-align:right">
-      🏥 초이스 이비인후과 &nbsp;·&nbsp; 용인시 수지구 신봉동
+    <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#475569">
+      <img src="/logo.png" style="width:20px;height:20px;object-fit:contain;border-radius:5px;background:rgba(255,255,255,.05);padding:2px" alt="CI">
+      초이스 이비인후과 &nbsp;·&nbsp; 용인시 수지구 신봉동
     </div>
   </div>
 </div>
