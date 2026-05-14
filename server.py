@@ -180,14 +180,14 @@ def num(value: str) -> float:
     return float(re.sub(r"[^0-9.]", "", value) or "0")
 
 
-def line_chart_svg(trend: list, color: str, grad_id: str) -> str:
+def line_chart_svg(trend: list, color: str, grad_id: str, unit: str = "", width: int = 340, height: int = 100) -> str:
     if not trend:
-        return '<text x="150" y="60" text-anchor="middle" fill="#94a3b8" font-size="13">데이터 없음</text>'
+        return f'<text x="{width//2}" y="60" text-anchor="middle" fill="#94a3b8" font-size="13">데이터 없음</text>'
     values = [v for _, v in trend]
     weeks = [w for w, _ in trend]
     lo, hi = min(values), max(values)
     span = max(hi - lo, 0.5)
-    W, H, pl, pr, pt, pb = 340, 100, 42, 10, 8, 22
+    W, H, pl, pr, pt, pb = width, height, 42, 10, 8, 22
     cw = W - pl - pr
     n = len(values)
     step = cw / max(n - 1, 1)
@@ -201,9 +201,12 @@ def line_chart_svg(trend: list, color: str, grad_id: str) -> str:
         f'<text x="{pl-4}" y="{pt + (1-(v-lo)/span)*H:.1f}" text-anchor="end" dominant-baseline="middle" fill="#94a3b8" font-size="9">{v:.0f}</text>'
         for v in [lo, (lo+hi)/2, hi]
     )
+    fmt_vals = [(f"{v:.1f}" if v < 100 else f"{int(v):,}") + unit for v in values]
     dots = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.5" fill="{color}" stroke="white" stroke-width="2"/>'
-        for x, y in pts
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="12" fill="transparent" class="chart-dot"'
+        f' data-label="{html.escape(w)} · {html.escape(fv)}" style="cursor:pointer"/>'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.5" fill="{color}" stroke="white" stroke-width="2" pointer-events="none"/>'
+        for (x, y), w, fv in zip(pts, weeks, fmt_vals)
     )
     xlabels = "".join(
         f'<text x="{x:.1f}" y="{pt+H+pb-2}" text-anchor="middle" fill="#94a3b8" font-size="9">{html.escape(w)}</text>'
@@ -256,13 +259,13 @@ def donut_svg(viruses: list) -> tuple[str, str]:
 def render_html() -> str:
     report, summary = load_report()
     flu_history = load_flu_history()
-    flu_svg = line_chart_svg((flu_history or summary.influenza_trend)[-5:], "#fb923c", "ag")
+    flu_svg = line_chart_svg((flu_history or summary.influenza_trend)[-5:], "#fb923c", "ag", unit="‰")
     ari_history = load_ari_history()
-    ari_svg = line_chart_svg((ari_history or summary.ari_trend)[-5:], "#a78bfa", "bg")
+    ari_svg = line_chart_svg((ari_history or summary.ari_trend)[-5:], "#a78bfa", "bg", unit="명")
     enteric_history = load_enteric_history()
-    enteric_trend_svg = line_chart_svg(enteric_history[-5:], "#34d399", "eg") if enteric_history else ""
+    enteric_trend_svg = line_chart_svg(enteric_history[-5:], "#34d399", "eg", unit="명") if enteric_history else ""
     corona_history = load_corona_history()
-    corona_svg = line_chart_svg(corona_history[-5:], "#22d3ee", "cg")
+    corona_svg = line_chart_svg(corona_history[-5:], "#22d3ee", "cg", unit="%")
     corona_pct = next((v for n, v in summary.key_viruses if n == "코로나"), "-")
     donut_paths, legend_html = donut_svg(summary.key_viruses)
     enteric_donut, enteric_legend = donut_svg(summary.enteric_viruses)
@@ -274,6 +277,20 @@ def render_html() -> str:
     epidemic_label = "유행중" if is_epidemic else "유행 아님"
     epidemic_color = "#ef4444" if is_epidemic else "#10b981"
     epidemic_bg = "rgba(239,68,68,.2)" if is_epidemic else "rgba(16,185,129,.15)"
+    max_gauge = summary.epidemic_threshold * 1.5
+    gauge_pct = min(flu_val / max_gauge * 100, 100)
+    threshold_pct = summary.epidemic_threshold / max_gauge * 100
+    try:
+        from datetime import datetime, timedelta
+        for fmt in ("%Y-%m-%d", "%Y.%m.%d"):
+            try:
+                pub = datetime.strptime(report.published_date, fmt)
+                break
+            except ValueError:
+                continue
+        next_update_str = (pub + timedelta(days=7)).strftime("%m.%d")
+    except Exception:
+        next_update_str = ""
 
     return f"""<!doctype html>
 <html lang="ko">
@@ -338,6 +355,9 @@ def render_html() -> str:
     .footer-src a{{color:#475569;font-weight:700;text-decoration:none}}
     .footer-players{{font-size:15px;font-weight:900;background:linear-gradient(90deg,#f97316,#f59e0b,#84cc16,#22d3ee,#818cf8,#e879f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}}
 
+    /* chart tooltip */
+    #chart-tip{{display:none;position:fixed;background:rgba(15,23,42,.96);color:#f1f5f9;padding:5px 11px;border-radius:8px;font-size:12px;font-weight:700;pointer-events:none;z-index:9999;border:1px solid rgba(255,255,255,.15);white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.5)}}
+
     /* ── 모바일 반응형 ── */
     @media (max-width:768px){{
       body{{height:auto;overflow-y:auto}}
@@ -363,7 +383,7 @@ def render_html() -> str:
 <div class="wrap">
 
   <div class="hdr">
-    <div class="hdr-week">📅 {html.escape(summary.week)}주차 <span class="hdr-week-date">· {html.escape(report.published_date)} 기준</span></div>
+    <div class="hdr-week">📅 {html.escape(summary.week)}주차 <span class="hdr-week-date">· {html.escape(report.published_date)} 기준{"&nbsp;&nbsp;⏭ 다음 업데이트: " + next_update_str if next_update_str else ""}</span></div>
     <div class="hdr-title">호흡기 감염병 모니터링</div>
     <div class="hdr-right">
       <img class="hdr-logo" src="/logo.png" alt="CI">
@@ -384,6 +404,13 @@ def render_html() -> str:
           <div style="padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;background:{epidemic_bg};color:{epidemic_color};border:1px solid {epidemic_color}">{epidemic_label}</div>
         </div>
         <div class="sec-sub" style="color:{direction_color}">{direction_icon} {html.escape(summary.influenza_direction)} · 기준 {summary.epidemic_threshold}‰</div>
+        <div style="margin:5px 0 6px">
+          <div style="position:relative;height:7px;background:rgba(255,255,255,.12);border-radius:4px">
+            <div style="position:absolute;left:0;top:0;height:100%;width:{gauge_pct:.1f}%;max-width:100%;background:linear-gradient(90deg,#10b981,{epidemic_color});border-radius:4px"></div>
+            <div style="position:absolute;left:{threshold_pct:.1f}%;top:-3px;height:13px;width:2px;background:rgba(255,255,255,.75);border-radius:1px" title="유행 기준선"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:3px;font-size:9px;opacity:.55"><span>0‰</span><span>기준 {summary.epidemic_threshold}‰</span></div>
+        </div>
         <div class="sec-chart">{flu_svg}</div>
       </div>
     </div>
@@ -436,10 +463,109 @@ def render_html() -> str:
   </div>
 
   <div class="footer">
-    <div class="footer-src">질병관리청 감염병포털 기반 자동 요약 &nbsp;·&nbsp;<a href="{html.escape(report.url)}" target="_blank" rel="noreferrer">원문 보기 →</a></div>
-    <div class="footer-players">The players forever!!!</div>
+    <div class="footer-src">
+      질병관리청 감염병포털 기반 자동 요약 &nbsp;·&nbsp;<a href="{html.escape(report.url)}" target="_blank" rel="noreferrer">원문 보기 →</a>
+      &nbsp;·&nbsp;<a href="/history">📈 주간 추이 전체보기</a>
+    </div>
+    <div style="font-size:11px;color:#475569;text-align:right">
+      🏥 초이스 이비인후과 &nbsp;·&nbsp; 용인시 수지구 신봉동
+    </div>
   </div>
 </div>
+<div id="chart-tip"></div>
+<script>
+(function(){{
+  var tip=document.getElementById('chart-tip');
+  document.querySelectorAll('.chart-dot').forEach(function(d){{
+    d.addEventListener('mouseenter',function(e){{
+      tip.textContent=this.dataset.label;
+      tip.style.display='block';
+      tip.style.left=(e.clientX+14)+'px';
+      tip.style.top=(e.clientY-38)+'px';
+    }});
+    d.addEventListener('mousemove',function(e){{
+      tip.style.left=(e.clientX+14)+'px';
+      tip.style.top=(e.clientY-38)+'px';
+    }});
+    d.addEventListener('mouseleave',function(){{tip.style.display='none';}});
+  }});
+}})();
+</script>
+</body>
+</html>"""
+
+
+def render_history_html() -> str:
+    import json
+    history: dict = {}
+    if STATE_PATH.exists():
+        with STATE_PATH.open(encoding="utf-8") as f:
+            history = json.load(f).get("weekly_history", {})
+    weeks = sorted((w for w in history if w.isdigit()), key=int)
+    def trend(key: str) -> list:
+        return [(f"{w}주", float(history[w][key])) for w in weeks if key in history[w]]
+
+    flu_svg  = line_chart_svg(trend("influenza"), "#fb923c", "hag", unit="‰",  width=700, height=130)
+    ari_svg  = line_chart_svg(trend("ari"),       "#a78bfa", "hbg", unit="명",  width=700, height=130)
+    cor_svg  = line_chart_svg(trend("corona"),    "#22d3ee", "hcg", unit="%",   width=700, height=130)
+    ent_svg  = line_chart_svg(trend("enteric"),   "#34d399", "heg", unit="명",  width=700, height=130)
+    n_weeks  = len(weeks)
+    week_range = f"{weeks[0]}~{weeks[-1]}주차" if weeks else "—"
+
+    cards = [
+        ("🌡", "인플루엔자 의사환자분율", "‰", "#fb923c", flu_svg),
+        ("🦠", "코로나바이러스 비율 (기타호흡기감염증 중)", "%", "#22d3ee", cor_svg),
+        ("📊", "급성호흡기감염증 입원감시", "명", "#a78bfa", ari_svg),
+        ("🧫", "장관감염증", "명", "#34d399", ent_svg),
+    ]
+    cards_html = "".join(
+        f'<div style="background:#161b22;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px 20px;margin-bottom:14px">'
+        f'<div style="font-size:12px;font-weight:700;color:#64748b;margin-bottom:10px">{icon} {label} ({unit})</div>'
+        f'<div style="height:155px">{svg}</div>'
+        f'</div>'
+        for icon, label, unit, color, svg in cards
+    )
+    return f"""<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>감염병 주간 추이 아카이브</title>
+  <style>
+    @font-face{{font-family:"LaundryGothic";src:url("/fonts/laundry-bold.woff") format("woff");font-weight:700}}
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{font-family:"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;background:#0d1117;color:#fff;padding:20px 24px 40px}}
+    .wrap{{max-width:900px;margin:0 auto}}
+    .hdr{{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap}}
+    .back{{font-size:13px;font-weight:700;color:#60a5fa;text-decoration:none;padding:5px 12px;background:rgba(59,130,246,.12);border-radius:8px;border:1px solid rgba(59,130,246,.3)}}
+    .back:hover{{background:rgba(59,130,246,.22)}}
+    h1{{font-family:"LaundryGothic",sans-serif;font-size:22px;font-weight:700;letter-spacing:2px;background:linear-gradient(90deg,#e2e8f0,#fff,#94a3b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}}
+    .badge{{font-size:12px;font-weight:700;color:#94a3b8;background:rgba(255,255,255,.06);padding:4px 10px;border-radius:6px}}
+    svg{{width:100%;height:100%;display:block}}
+    #chart-tip{{display:none;position:fixed;background:rgba(15,23,42,.96);color:#f1f5f9;padding:5px 11px;border-radius:8px;font-size:12px;font-weight:700;pointer-events:none;z-index:9999;border:1px solid rgba(255,255,255,.15);white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.5)}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <a class="back" href="/">← 대시보드</a>
+    <h1>주간 추이 아카이브</h1>
+    <span class="badge">📅 {week_range} · {n_weeks}주 데이터</span>
+  </div>
+  {cards_html}
+  <div style="font-size:11px;color:#334155;margin-top:6px">질병관리청 감염병포털 기반 · 초이스 이비인후과 제공</div>
+</div>
+<div id="chart-tip"></div>
+<script>
+(function(){{
+  var tip=document.getElementById('chart-tip');
+  document.querySelectorAll('.chart-dot').forEach(function(d){{
+    d.addEventListener('mouseenter',function(e){{tip.textContent=this.dataset.label;tip.style.display='block';tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-38)+'px';}});
+    d.addEventListener('mousemove',function(e){{tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-38)+'px';}});
+    d.addEventListener('mouseleave',function(){{tip.style.display='none';}});
+  }});
+}})();
+</script>
 </body>
 </html>"""
 
@@ -489,6 +615,15 @@ def index() -> Response:
         return send_bytes(render_html().encode("utf-8"), "text/html; charset=utf-8")
     except Exception as exc:
         print(f"render error: {exc}", flush=True)
+        return send_bytes(f"<pre>오류: {exc}</pre>".encode("utf-8"), "text/html; charset=utf-8", status=500)
+
+
+@app.get("/history")
+def history() -> Response:
+    try:
+        return send_bytes(render_history_html().encode("utf-8"), "text/html; charset=utf-8")
+    except Exception as exc:
+        print(f"history render error: {exc}", flush=True)
         return send_bytes(f"<pre>오류: {exc}</pre>".encode("utf-8"), "text/html; charset=utf-8", status=500)
 
 
