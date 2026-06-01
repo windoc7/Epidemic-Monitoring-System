@@ -1,43 +1,77 @@
 {
   "report": {
-    "doc_no": "20260507162551618",
-    "title": "2026년 감염병 표본감시 주간소식지 18주차",
+    "doc_no": "20260528161512957",
+    "title": "2026년 감염병 표본감시 주간소식지 21주차",
     "department": "감염병관리과",
-    "published_date": "2026.05.07",
-    "url": "https://dportal.kdca.go.kr/pot/bbs/BD_selectBbs.do?q_bbsDocNo=20260507162551618&q_bbsSn=1010&q_clsfNo=2"
+    "published_date": "2026.05.28",
+    "url": "https://dportal.kdca.go.kr/pot/bbs/BD_selectBbs.do?q_bbsDocNo=20260528161512957&q_bbsSn=1010&q_clsfNo=2"
   },
   "summary": {
-    "week": "18",
-    "influenza": "8.1‰",
-    "influenza_direction": "증가",
+    "week": "21",
+    "influenza": "4.3‰",
+    "influenza_direction": "감소",
     "influenza_trend": [
-      ["14주", 14.5],
-      ["15주", 10.8],
-      ["16주", 10.1],
-      ["17주", 6.9],
-      ["18주", 8.1]
+      [
+        "18주",
+        8.1
+      ],
+      [
+        "19주",
+        6.9
+      ],
+      [
+        "20주",
+        5.8
+      ],
+      [
+        "21주",
+        4.3
+      ]
     ],
-    "ari_cases": "1,442명",
-    "ari_delta": "152명 감소",
+    "ari_cases": "1,617명",
+    "ari_delta": "36명 증가",
     "key_viruses": [
-      ["리노", "31.7%"],
-      ["메타뉴모", "19.8%"],
-      ["코로나", "10.1%"],
-      ["파라인플루", "8.5%"]
+      [
+        "리노",
+        "29.5%"
+      ],
+      [
+        "메타뉴모",
+        "19.7%"
+      ],
+      [
+        "파라인플루",
+        "18.1%"
+      ],
+      [
+        "코로나",
+        "11.1%"
+      ]
     ],
-    "ari_trend": [
-      ["14주", 1419.0],
-      ["15주", 1365.0],
-      ["16주", 1457.0],
-      ["17주", 1480.0],
-      ["18주", 1442.0]
-    ],
+    "ari_trend": [],
     "epidemic_threshold": 8.6,
-    "corona_cases": "10.1%",
-    "corona_delta": "기타호흡기감염증 중",
-    "corona_trend": [],
-    "enteric_cases": "533명",
-    "enteric_delta": "41명 감소",
+    "corona_cases": "29명",
+    "corona_delta": "-",
+    "corona_trend": [
+      [
+        "18주",
+        40.0
+      ],
+      [
+        "19주",
+        40.0
+      ],
+      [
+        "20주",
+        42.0
+      ],
+      [
+        "21주",
+        29.0
+      ]
+    ],
+    "enteric_cases": "671명",
+    "enteric_delta": "64명 감소",
     "enteric_viruses": []
   }
 }
